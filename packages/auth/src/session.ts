@@ -28,7 +28,11 @@ function secret(): Uint8Array {
 
 function ttlSeconds(): number {
   const hours = Number(process.env.SESSION_TTL_HOURS ?? "720");
-  return Math.max(1, hours) * 3600;
+  // Guard against a non-numeric SESSION_TTL_HOURS (e.g. "30d") — Number(...) →
+  // NaN would make the JWT expiry NaN and jose throws "Invalid setExpirationTime
+  // input". Fall back to the 720h default rather than break auth.
+  const safeHours = Number.isFinite(hours) && hours > 0 ? hours : 720;
+  return safeHours * 3600;
 }
 
 export async function signSession(session: Session): Promise<string> {
