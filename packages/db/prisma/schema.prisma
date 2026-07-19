@@ -4,6 +4,10 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Vercel/Railway serverless run on Amazon Linux (RHEL-family). Generate the
+  // query engine for those targets too, not just the build machine's "native",
+  // or Prisma throws at runtime ("Query engine library not found").
+  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
