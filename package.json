@@ -5,7 +5,7 @@
   "description": "ITSolute Connect — missed-call recovery + cloud front-desk for micro local-service businesses",
   "packageManager": "pnpm@10.33.4",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -20,7 +20,9 @@
     "db:migrate": "pnpm --filter @itsolute/db migrate",
     "db:migrate:create": "pnpm --filter @itsolute/db migrate:create",
     "db:seed": "pnpm --filter @itsolute/db seed",
-    "db:studio": "pnpm --filter @itsolute/db studio"
+    "db:studio": "pnpm --filter @itsolute/db studio",
+    "start:api": "pnpm db:migrate && pnpm --filter @itsolute/api start",
+    "start:worker": "pnpm --filter @itsolute/api start:worker"
   },
   "devDependencies": {
     "@types/node": "^22.20.1"

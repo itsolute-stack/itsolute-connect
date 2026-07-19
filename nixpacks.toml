@@ -1,0 +1,16 @@
+# Railway / Nixpacks build config for the pnpm monorepo.
+# The service Root Directory MUST be the repo root (not apps/api) so the pnpm
+# workspace + lockfile are present and workspace:* deps resolve. Set each
+# service's Start Command in Railway:
+#   API service:    pnpm run start:api
+#   Worker service: pnpm run start:worker
+
+[phases.install]
+# Install the whole workspace with pnpm (not npm). --prod=false keeps devDeps
+# (prisma CLI, typescript) available for `prisma generate`.
+cmds = ["pnpm install --frozen-lockfile --prod=false"]
+
+[phases.build]
+# Generate the Prisma client. No TS build step — the app runs via tsx, which
+# transpiles the TS-source workspace packages at load time.
+cmds = ["pnpm --filter @itsolute/db exec prisma generate"]
