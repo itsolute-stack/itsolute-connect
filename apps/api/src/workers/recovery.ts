@@ -139,7 +139,11 @@ export async function processRecoveryJob(
   }
 
   // Send from the tenant's own WABA, via the platform brand it's registered under.
-  const variables = [tenant.brandName, tenant.bookingUrl ?? ""];
+  // Fill only as many body params as the template actually declares ({{1}}, {{2}}
+  // …). Sending extra variables to a 0- or 1-param template makes Meta reject it
+  // ("number of parameters does not match").
+  const paramCount = (template.body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).length;
+  const variables = [tenant.brandName, tenant.bookingUrl ?? ""].slice(0, paramCount);
   try {
     const { waMessageId } = await sendTemplate({
       brandSlug: sender.platformBrandSlug,
@@ -180,9 +184,15 @@ export function createRecoveryWorker(): Worker<RecoveryJob> {
     async (job: Job<RecoveryJob>) => processRecoveryJob(job.data),
     { connection, concurrency: 5 },
   );
-  worker.on("failed", (job, err) =>
-    console.error(`[recovery] job ${job?.id} failed:`, err.message),
-  );
+  worker.on("failed", (job, err) => {
+    // Surface the underlying WA platform response (status + Meta error body), not
+    // just the generic wrapper message, so failures are self-diagnosing.
+    const detail =
+      err instanceof WaPlatformError
+        ? ` httpStatus=${err.opts.httpStatus ?? "-"} metaCode=${err.opts.metaCode ?? "-"} body=${err.opts.body ?? "-"}`
+        : "";
+    console.error(`[recovery] job ${job?.id} failed:`, err.message + detail);
+  });
   worker.on("completed", (job) => console.log(`[recovery] job ${job.id} completed`));
   return worker;
 }
