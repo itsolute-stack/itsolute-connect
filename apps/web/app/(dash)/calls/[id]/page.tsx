@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireTenantSession } from "@/lib/session";
 import { getCall, getTenant } from "@/lib/queries";
 import { CallStatusPill, RecoveryStatusPill, BookingStatusPill } from "@/components/pills";
+import { ReplyBox } from "@/components/ReplyBox";
 import { phoneDisplay, dateTime } from "@/lib/format";
 
 export default async function CallDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -79,6 +80,11 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
             ) : (
               <p className="text-sm text-[var(--color-ink-soft)]">No recovery message for this call.</p>
             )}
+          </div>
+
+          <div className="card p-5">
+            <div className="mb-3 text-sm font-semibold">Reply on WhatsApp</div>
+            <ReplyBox callId={call.id} />
           </div>
 
           <div className="card p-5">

@@ -148,6 +148,9 @@ model Tenant {
   billingCycle  BillingCycle @default(monthly) @map("billing_cycle")
   aiEnabled     Boolean      @default(false) @map("ai_enabled")
   recordCalls   Boolean      @default(false) @map("record_calls") // Mode B call recording
+  // Approved WABA template used to alert staff when a missed caller replies
+  // (business-initiated to the owner needs a template). Null = no push alert.
+  alertTemplateName String?  @map("alert_template_name")
   onboardingFee Int?         @map("onboarding_fee") // admin-set, optional done-for-you fee (rupees)
   status        TenantStatus @default(trial)
   createdAt     DateTime     @default(now()) @map("created_at")

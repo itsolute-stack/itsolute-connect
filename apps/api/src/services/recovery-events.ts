@@ -1,4 +1,5 @@
 import { prisma, type RecoveryStatus } from "@itsolute/db";
+import { sendTemplate } from "../lib/wa-platform.js";
 
 // Correlation logic for WhatsApp status + reply events, shared by the WebSocket
 // subscriber (real-time) and the reconciliation poll (gap-filling). Both are
@@ -123,10 +124,38 @@ export async function applyInboundReply(input: {
 
 // ── Owner alert seam ────────────────────────────────────────────────────────
 // Spec §4a.7: alert owner/staff on a reply. A real channel (WhatsApp to staff
-// via the platform, email, or push) lands with the dashboard/staff work; for now
-// this records intent so the reply path is complete and observable.
+// via the platform. Sends the tenant's configured alert template (2 params:
+// {{1}} = caller, {{2}} = note) to each Staff member with alertOnMissed=true.
+// Requires tenant.alertTemplateName (an approved WABA template) + a connected
+// sender + at least one alert recipient; otherwise it just logs (no misleading
+// or failed sends).
 export async function alertOwnerOfReply(tenantId: string, recoveryMessageId: string, callerE164: string) {
   console.log(
     `[alert] tenant=${tenantId} recovery=${recoveryMessageId} caller=${callerE164} replied on WhatsApp`,
   );
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant?.alertTemplateName) return; // no push channel configured
+
+  const sender = await prisma.whatsAppSender.findFirst({
+    where: { tenantId, status: "connected" },
+  });
+  if (!sender?.platformBrandSlug) return;
+
+  const recipients = await prisma.staff.findMany({ where: { tenantId, alertOnMissed: true } });
+  if (recipients.length === 0) return;
+
+  for (const r of recipients) {
+    try {
+      await sendTemplate({
+        brandSlug: sender.platformBrandSlug,
+        to: r.e164,
+        templateName: tenant.alertTemplateName,
+        variables: [callerE164, "replied to your message — follow up now"],
+      });
+      console.log(`[alert] pushed lead-reply alert to ${r.name} (${r.e164}) re ${callerE164}`);
+    } catch (e) {
+      console.error(`[alert] failed to alert ${r.e164}:`, (e as Error).message);
+    }
+  }
 }
