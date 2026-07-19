@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+/* ITSolute Connect design system — clean, modern, mobile-first (spec §7). */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --color-canvas: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-ink: #0f172a; /* slate-900 */
+  --color-ink-soft: #475569; /* slate-600 */
+  --color-ink-faint: #94a3b8; /* slate-400 */
+  --color-line: #e8ebef;
+
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-600: #4f46e5; /* indigo-600 accent */
+  --color-brand-700: #4338ca;
+
+  --color-money-50: #ecfdf5;
+  --color-money-600: #059669; /* emerald — revenue/recovered */
+  --color-money-700: #047857;
+
+  --color-warn-50: #fffbeb;
+  --color-warn-600: #d97706;
+  --color-danger-50: #fef2f2;
+  --color-danger-600: #dc2626;
+
+  --radius-card: 16px;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Reusable primitives */
+@layer components {
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  }
+  .btn-primary {
+    background: var(--color-brand-600);
+    color: #fff;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: background 0.15s ease;
+  }
+  .btn-primary:hover {
+    background: var(--color-brand-700);
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #eef1f4 25%, #e3e7ec 37%, #eef1f4 63%);
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease infinite;
+    border-radius: 8px;
+  }
+  @keyframes shimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+  }
+}

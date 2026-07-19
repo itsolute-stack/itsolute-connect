@@ -1,0 +1,378 @@
+// ITSolute Connect — data model (spec §3)
+// Multi-tenant. Every customer-facing row is scoped by tenantId.
+// Designed for BOTH service modes (A = Recovery, B = Front Desk) from day one.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum TenantMode {
+  A // Recovery (Phase 1)
+  B // Front Desk
+}
+
+enum Plan {
+  recovery
+  recovery_pro
+  front_desk
+  ai_front_desk
+}
+
+enum BillingCycle {
+  monthly
+  annual
+}
+
+enum TenantStatus {
+  trial
+  active
+  paused
+}
+
+enum UserRole {
+  owner
+  staff
+  admin // internal ITSolute admin (tenantId null)
+}
+
+enum PlivoNumberStatus {
+  active
+  released
+}
+
+enum WhatsAppProvider {
+  own      // our Phase-1 businesses: paste WABA ids directly
+  embedded // external tenants via Meta Embedded Signup
+}
+
+enum QualityRating {
+  GREEN
+  YELLOW
+  RED
+}
+
+enum WhatsAppSenderStatus {
+  connected
+  disconnected
+  flagged
+}
+
+enum TemplateCategory {
+  utility // REQUIRED for recovery messages
+  marketing
+  authentication
+}
+
+enum TemplateStatus {
+  approved
+  pending
+  rejected
+}
+
+enum CallDirection {
+  inbound
+  outbound
+}
+
+enum CallStatus {
+  ringing
+  answered
+  missed
+  recovered
+}
+
+enum RecoveryStatus {
+  queued
+  sent
+  delivered
+  read
+  replied
+  failed
+  skipped
+}
+
+enum RecoveryStatusReason {
+  not_on_whatsapp
+  cooldown
+  quiet_hours_deferred
+  no_sender
+  no_template
+}
+
+enum BookingSource {
+  recovery
+  manual
+}
+
+enum BookingStatus {
+  requested
+  confirmed
+  done
+  cancelled
+}
+
+enum IvrAction {
+  ring_staff
+  submenu
+  voicemail
+  hangup
+}
+
+// ---------------------------------------------------------------------------
+// Core tenancy
+// ---------------------------------------------------------------------------
+
+model Tenant {
+  id            String       @id @default(uuid()) @db.Uuid
+  slug          String       @unique
+  brandName     String       @map("brand_name")
+  timezone      String       @default("Asia/Kolkata")
+  businessHours Json         @default("{}") @map("business_hours") // per-day open/close; drives quiet-hours
+  bookingUrl    String?      @map("booking_url")
+  avgJobValue   Int          @default(0) @map("avg_job_value") // rupees, for "revenue recovered" estimate
+  mode          TenantMode   @default(A)
+  plan          Plan         @default(recovery)
+  billingCycle  BillingCycle @default(monthly) @map("billing_cycle")
+  aiEnabled     Boolean      @default(false) @map("ai_enabled")
+  recordCalls   Boolean      @default(false) @map("record_calls") // Mode B call recording
+  onboardingFee Int?         @map("onboarding_fee") // admin-set, optional done-for-you fee (rupees)
+  status        TenantStatus @default(trial)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  users            User[]
+  plivoNumbers     PlivoNumber[]
+  whatsappSenders  WhatsAppSender[]
+  templates        Template[]
+  calls            Call[]
+  recoveryMessages RecoveryMessage[]
+  bookings         Booking[]
+  staff            Staff[]
+  ivrNodes         IvrNode[]
+  usageDaily       UsageDaily[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String?  @map("tenant_id") @db.Uuid // null = internal admin
+  email        String   @unique
+  passwordHash String?  @map("password_hash") // null when magic-link only
+  name         String?
+  role         UserRole @default(owner)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Telephony (Plivo) — receives calls
+// ---------------------------------------------------------------------------
+
+model PlivoNumber {
+  id        String            @id @default(uuid()) @db.Uuid
+  tenantId  String            @map("tenant_id") @db.Uuid
+  e164      String            @unique
+  plivoAppId String?          @map("plivo_app_id")
+  status    PlivoNumberStatus @default(active)
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  calls  Call[]
+
+  @@index([tenantId])
+  @@map("plivo_numbers")
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp — sends recovery messages FROM the customer's OWN WABA
+// ---------------------------------------------------------------------------
+
+model WhatsAppSender {
+  id            String               @id @default(uuid()) @db.Uuid
+  tenantId      String               @map("tenant_id") @db.Uuid
+  provider      WhatsAppProvider     @default(own)
+  wabaId        String?              @map("waba_id")
+  phoneNumberId String?              @map("phone_number_id")
+  // The brand slug the existing WhatsApp platform keys sends by (e.g.
+  // "cleanwarks"). Distinct from tenant.slug ("clean-warks") — stored explicitly
+  // because the two do not reliably match. Required to send via that platform.
+  platformBrandSlug String?          @map("platform_brand_slug")
+  displayE164   String               @map("display_e164") // the customer's WhatsApp number (sends FROM here)
+  displayName   String?              @map("display_name") // approved WhatsApp business display name
+  qualityRating QualityRating?       @map("quality_rating") // mirror from Meta
+  verified      Boolean              @default(false) // Meta business verification done?
+  status        WhatsAppSenderStatus @default(disconnected)
+  connectedAt   DateTime?            @map("connected_at")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recoveryMessages RecoveryMessage[]
+
+  @@index([tenantId])
+  @@map("whatsapp_senders")
+}
+
+model Template {
+  id        String           @id @default(uuid()) @db.Uuid
+  tenantId  String?          @map("tenant_id") @db.Uuid // null = shared default
+  name      String
+  language  String           @default("en") // en, ml, ta, hi...
+  category  TemplateCategory @default(utility) // MUST be utility for recovery
+  status    TemplateStatus   @default(pending)
+  body      String
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  tenant           Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recoveryMessages RecoveryMessage[]
+
+  @@index([tenantId])
+  @@map("templates")
+}
+
+// ---------------------------------------------------------------------------
+// Calls
+// ---------------------------------------------------------------------------
+
+model Call {
+  id            String        @id @default(uuid()) @db.Uuid
+  tenantId      String        @map("tenant_id") @db.Uuid
+  plivoNumberId String?       @map("plivo_number_id") @db.Uuid
+  callerE164    String        @map("caller_e164")
+  direction     CallDirection @default(inbound)
+  startedAt     DateTime      @default(now()) @map("started_at")
+  answeredAt    DateTime?     @map("answered_at")
+  endedAt       DateTime?     @map("ended_at")
+  durationSec   Int           @default(0) @map("duration_sec")
+  billableSec   Int           @default(0) @map("billable_sec") // Mode B usage metering
+  status        CallStatus    @default(ringing)
+  routePath     Json?         @map("route_path") // Mode B: which staff/IVR nodes it hit
+  recordingUrl  String?       @map("recording_url")
+  plivoCallUuid String?       @unique @map("plivo_call_uuid")
+  raw           Json?
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plivoNumber      PlivoNumber?      @relation(fields: [plivoNumberId], references: [id], onDelete: SetNull)
+  recoveryMessages RecoveryMessage[]
+  bookings         Booking[]
+
+  @@index([tenantId, startedAt])
+  @@index([tenantId, callerE164])
+  @@map("calls")
+}
+
+model RecoveryMessage {
+  id               String                @id @default(uuid()) @db.Uuid
+  tenantId         String                @map("tenant_id") @db.Uuid
+  callId           String                @map("call_id") @db.Uuid
+  callerE164       String                @map("caller_e164")
+  whatsappSenderId String?               @map("whatsapp_sender_id") @db.Uuid
+  templateId       String?               @map("template_id") @db.Uuid
+  waMessageId      String?               @unique @map("wa_message_id")
+  status           RecoveryStatus        @default(queued)
+  statusReason     RecoveryStatusReason? @map("status_reason")
+  sentAt           DateTime?             @map("sent_at")
+  deliveredAt      DateTime?             @map("delivered_at")
+  readAt           DateTime?             @map("read_at")
+  repliedAt        DateTime?             @map("replied_at")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  call           Call            @relation(fields: [callId], references: [id], onDelete: Cascade)
+  whatsappSender WhatsAppSender? @relation(fields: [whatsappSenderId], references: [id], onDelete: SetNull)
+  template       Template?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, callerE164])
+  @@map("recovery_messages")
+}
+
+model Booking {
+  id          String        @id @default(uuid()) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  callId      String?       @map("call_id") @db.Uuid
+  callerE164  String        @map("caller_e164")
+  source      BookingSource @default(recovery)
+  status      BookingStatus @default(requested)
+  scheduledAt DateTime?     @map("scheduled_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  call   Call?  @relation(fields: [callId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@map("bookings")
+}
+
+// ---------------------------------------------------------------------------
+// Mode B — staff hunt + IVR
+// ---------------------------------------------------------------------------
+
+model Staff {
+  id            String  @id @default(uuid()) @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  name          String
+  e164          String
+  ringOrder     Int     @default(0) @map("ring_order") // Mode B hunt sequence
+  alertOnMissed Boolean @default(true) @map("alert_on_missed")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ringOrder])
+  @@map("staff")
+}
+
+model IvrNode {
+  id       String    @id @default(uuid()) @db.Uuid
+  tenantId String    @map("tenant_id") @db.Uuid
+  parentId String?   @map("parent_id") @db.Uuid
+  key      String? // DTMF digit
+  prompt   String // TTS text or audio ref
+  action   IvrAction
+  config   Json      @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   IvrNode?  @relation("IvrTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children IvrNode[] @relation("IvrTree")
+
+  @@index([tenantId, parentId])
+  @@map("ivr_nodes")
+}
+
+// ---------------------------------------------------------------------------
+// Billing rollup
+// ---------------------------------------------------------------------------
+
+model UsageDaily {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  date             DateTime @db.Date
+  minutes          Int      @default(0) // Mode B billable minutes
+  recoveryMessages Int      @default(0) @map("recovery_messages")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date])
+  @@index([tenantId, date])
+  @@map("usage_daily")
+}

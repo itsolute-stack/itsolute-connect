@@ -1,0 +1,28 @@
+{
+  "name": "itsolute-connect",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ITSolute Connect — missed-call recovery + cloud front-desk for micro local-service businesses",
+  "packageManager": "pnpm@10.33.4",
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "db:generate": "pnpm --filter @itsolute/db generate",
+    "db:migrate": "pnpm --filter @itsolute/db migrate",
+    "db:migrate:create": "pnpm --filter @itsolute/db migrate:create",
+    "db:seed": "pnpm --filter @itsolute/db seed",
+    "db:studio": "pnpm --filter @itsolute/db studio"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1"
+  }
+}
