@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
   // Monorepo: trace from the repo root so the Prisma query engine (in the root
   // pnpm store) is bundled into the Vercel serverless functions.
   outputFileTracingRoot: repoRoot,
+  // Force the Prisma query engine binary into EVERY function bundle. The plugin
+  // alone got it into route handlers but not page/server-action functions, so
+  // page renders + the login action still failed to load the engine.
+  outputFileTracingIncludes: {
+    "/**": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
+  },
   // Our workspace packages ship TS source — transpile them.
   transpilePackages: ["@itsolute/db", "@itsolute/auth"],
   // Keep Prisma + bcrypt out of the bundle (Node-only, loaded at runtime).

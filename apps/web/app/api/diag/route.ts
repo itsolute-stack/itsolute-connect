@@ -25,6 +25,17 @@ export async function GET(req: Request) {
     prismaError = String(e?.message ?? e).replace(/postgres(ql)?:\/\/\S+/gi, "postgres://<redacted>").slice(0, 500);
   }
 
+  // Exercise the exact login logic (Prisma model query + bcrypt + jose sign).
+  let loginOk = false;
+  let loginError = "";
+  try {
+    const { login } = await import("@itsolute/auth");
+    const r = await login("admin@itsolute.com", "dev-pass-123");
+    loginOk = !!r;
+  } catch (e: any) {
+    loginError = String(e?.message ?? e).replace(/postgres(ql)?:\/\/\S+/gi, "postgres://<redacted>").slice(0, 500);
+  }
+
   return Response.json({
     node: process.version,
     authSecretLen: (process.env.AUTH_SECRET ?? "").length,
@@ -33,5 +44,7 @@ export async function GET(req: Request) {
     databaseUrlIsPooler: dbHost.includes("pooler"),
     prismaOk,
     prismaError,
+    loginOk,
+    loginError,
   });
 }
