@@ -162,3 +162,15 @@ actions. Actually renting a number + wiring webhooks via the **Plivo API** lives
 `apps/api` ([services/plivo-provision.ts](apps/api/src/services/plivo-provision.ts),
 `POST /admin/tenants/:id/plivo-number`, admin-JWT-guarded); it needs Plivo
 credentials and renting is an explicit paid action.
+
+## Deployment
+
+- **`apps/web`** → Vercel (`itsolute-connect-web.vercel.app`). Env: `DATABASE_URL`,
+  `AUTH_SECRET` (32+ chars, **identical to the API's**), `SESSION_TTL_HOURS` (opt).
+- **`apps/api`** → Railway, two services from the same package sharing env:
+  - API (Plivo webhooks): start `pnpm run start:api`.
+  - Worker (recovery queue + WhatsApp status/reply): start `pnpm run start:worker`.
+
+All three read `DATABASE_URL` (Supabase pooler URL) and `AUTH_SECRET` — keep
+`AUTH_SECRET` the same value across every service or sessions won't verify across
+web and API.
