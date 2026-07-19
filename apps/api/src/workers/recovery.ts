@@ -134,7 +134,7 @@ export async function processRecoveryJob(
       senderId: sender.id,
       templateId: template.id,
     });
-    await enqueueRecovery(data, { delayMs, jobId: `call:${data.callId}:d${now.getTime()}` });
+    await enqueueRecovery(data, { delayMs, jobId: `call-${data.callId}-d${now.getTime()}` });
     return { status: "deferred", reason: "quiet_hours_deferred", delayMs };
   }
 

@@ -46,8 +46,10 @@ export async function enqueueRecovery(
   // Default de-dupe: one recovery job per call, even on webhook retries. A
   // quiet-hours deferral re-enqueues with a distinct jobId (the original job is
   // still active, so BullMQ would reject a duplicate id).
+  // NOTE: BullMQ reserves ':' as its Redis key separator — jobIds must not
+  // contain it, so we use '-' (callId is a colon-free UUID).
   await q.add(RECOVERY_QUEUE, job, {
-    jobId: opts?.jobId ?? `call:${job.callId}`,
+    jobId: opts?.jobId ?? `call-${job.callId}`,
     delay: opts?.delayMs && opts.delayMs > 0 ? opts.delayMs : undefined,
   });
 }
