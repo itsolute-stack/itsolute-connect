@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PrismaPlugin } from "@prisma/nextjs-monorepo-workaround-plugin";
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -15,11 +16,16 @@ const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
   // Our workspace packages import with NodeNext-style ".js" specifiers that map
   // to ".ts" source — let webpack resolve those.
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     config.resolve.extensionAlias = {
       ".js": [".ts", ".tsx", ".js", ".jsx"],
       ".mjs": [".mts", ".mjs"],
     };
+    // Copy the Prisma query engine next to the server bundle (monorepo + Next
+    // otherwise doesn't trace the .so.node → "Query Engine not found" at runtime).
+    if (isServer) {
+      config.plugins = [...config.plugins, new PrismaPlugin()];
+    }
     return config;
   },
 };
