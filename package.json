@@ -21,8 +21,9 @@
     "db:migrate:create": "pnpm --filter @itsolute/db migrate:create",
     "db:seed": "pnpm --filter @itsolute/db seed",
     "db:studio": "pnpm --filter @itsolute/db studio",
-    "start:api": "pnpm db:migrate && pnpm --filter @itsolute/api start",
-    "start:worker": "pnpm --filter @itsolute/api start:worker"
+    "start:api": "pnpm --filter @itsolute/api start",
+    "start:worker": "pnpm --filter @itsolute/api start:worker",
+    "release": "pnpm --filter @itsolute/db migrate"
   },
   "devDependencies": {
     "@types/node": "^22.20.1"
