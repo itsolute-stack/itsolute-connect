@@ -1,20 +1,33 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireTenantSession } from "@/lib/session";
-import { getCall, getTenant } from "@/lib/queries";
+import { getCall, getTenant, getWhatsAppSender } from "@/lib/queries";
 import { CallStatusPill, RecoveryStatusPill, BookingStatusPill } from "@/components/pills";
 import { ReplyBox } from "@/components/ReplyBox";
+import { ConversationThread } from "@/components/ConversationThread";
+import { getConversation, type ConversationResult } from "@/lib/wa-conversation";
 import { phoneDisplay, dateTime } from "@/lib/format";
 
 export default async function CallDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireTenantSession();
   const { id } = await params;
-  const [tenant, call] = await Promise.all([getTenant(session.tenantId), getCall(session.tenantId, id)]);
+  const [tenant, call, sender] = await Promise.all([
+    getTenant(session.tenantId),
+    getCall(session.tenantId, id),
+    getWhatsAppSender(session.tenantId),
+  ]);
   if (!call || !tenant) notFound();
 
   const rec = call.recoveryMessages[0];
   const booking = call.bookings[0];
   const tz = tenant.timezone;
+
+  // Pull the actual WhatsApp thread (message text) from the platform — only when
+  // a recovery message exists (no message → no conversation to fetch).
+  const conversation: ConversationResult =
+    rec && sender?.platformBrandSlug
+      ? await getConversation(sender.platformBrandSlug, call.callerE164)
+      : { ok: true, messages: [] };
 
   // Build an ordered timeline from the timestamps we actually have.
   const steps: { label: string; at?: Date | null; done: boolean }[] = [
@@ -83,7 +96,14 @@ export default async function CallDetailPage({ params }: { params: Promise<{ id:
           </div>
 
           <div className="card p-5">
-            <div className="mb-3 text-sm font-semibold">Reply on WhatsApp</div>
+            <div className="mb-3 text-sm font-semibold">Conversation</div>
+            <div className="mb-4">
+              <ConversationThread
+                messages={conversation.messages}
+                timeZone={tz}
+                error={conversation.ok ? undefined : conversation.error}
+              />
+            </div>
             <ReplyBox callId={call.id} />
           </div>
 
