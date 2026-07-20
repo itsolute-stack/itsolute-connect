@@ -12,7 +12,13 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Runtime: Supabase TRANSACTION pooler (port 6543, ?pgbouncer=true) — handles
+  // many serverless clients. The session pooler (5432, ~15 clients) exhausts
+  // under Vercel + Railway load ("max clients reached in session mode").
+  url = env("DATABASE_URL")
+  // Migrations can't run through pgbouncer — point them at a direct/session
+  // connection (port 5432). Only needed where `prisma migrate` runs.
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------
