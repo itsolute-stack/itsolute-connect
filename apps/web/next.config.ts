@@ -13,6 +13,9 @@ const nextConfig: NextConfig = {
   // alone got it into route handlers but not page/server-action functions, so
   // page renders + the login action still failed to load the engine.
   outputFileTracingIncludes: {
+    // "/**" matches routes with a segment (/admin, /calls…) but NOT the bare
+    // root "/" — which is the owner dashboard. Include "/" explicitly.
+    "/": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
     "/**": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
   },
   // Our workspace packages ship TS source — transpile them.
