@@ -30,6 +30,9 @@ const nextConfig: NextConfig = {
       ".js": [".ts", ".tsx", ".js", ".jsx"],
       ".mjs": [".mts", ".mjs"],
     };
+    // Import markdown files (e.g. the onboarding playbook) as raw strings so the
+    // content stays an editable .md file in the repo, inlined at build time.
+    config.module.rules.push({ test: /\.md$/, type: "asset/source" });
     // Copy the Prisma query engine next to the server bundle (monorepo + Next
     // otherwise doesn't trace the .so.node → "Query Engine not found" at runtime).
     if (isServer) {
