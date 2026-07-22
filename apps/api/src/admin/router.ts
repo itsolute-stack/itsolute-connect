@@ -19,18 +19,23 @@ adminRouter.post(
     const tenantId = req.params.id;
     const body = req.body ?? {};
 
-    if (body.mode === "rent") {
-      const result = await rentNumber(tenantId, {
-        country: body.country,
-        pattern: body.pattern,
-        confirm: body.confirm === true,
-      });
-      return res.json({ ok: true, ...result });
-    }
+    try {
+      if (body.mode === "rent") {
+        const result = await rentNumber(tenantId, {
+          country: body.country,
+          pattern: body.pattern,
+          confirm: body.confirm === true,
+        });
+        return res.json({ ok: true, ...result });
+      }
 
-    // default: assign an existing owned number
-    if (!body.e164) return res.status(400).json({ error: "e164 required for assign" });
-    const result = await configureOwnedNumber(tenantId, String(body.e164));
-    return res.json({ ok: true, ...result });
+      // default: assign an existing owned number
+      if (!body.e164) return res.status(400).json({ ok: false, error: "A phone number is required." });
+      const result = await configureOwnedNumber(tenantId, String(body.e164));
+      return res.json({ ok: true, ...result });
+    } catch (e) {
+      // Admin-only endpoint — surface the real Plivo/config error to the UI.
+      return res.status(502).json({ ok: false, error: (e as Error).message });
+    }
   }),
 );

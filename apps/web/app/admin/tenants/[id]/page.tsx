@@ -52,16 +52,19 @@ export default async function AdminTenantDetail({ params }: { params: Promise<{ 
         )}
         <AssignNumberForm tenantId={tenant.id} current={number?.e164} />
         <p className="mt-3 text-xs text-[var(--color-ink-faint)]">
-          Renting a new number + wiring webhooks via the Plivo API runs from the backend admin endpoint
-          (needs Plivo credentials). This form records an existing number’s assignment.
+          Enter a Plivo number you already own (buy it in the Plivo console first). This creates the Plivo
+          Application pointed at our webhooks, assigns the number to it, and records it — full provisioning,
+          no CLI needed. Returns the new Plivo Application ID on success.
         </p>
       </Section>
 
       <Section title="WhatsApp sender (own WABA)">
         <LinkWabaForm tenantId={tenant.id} sender={sender} />
         <p className="mt-3 text-xs text-[var(--color-ink-faint)]">
-          Phase-1 businesses paste their own WABA IDs here (provider <code>own</code>). External tenants use Embedded
-          Signup (provider <code>embedded</code>) after Meta Tech Provider approval.
+          Enter the platform brand slug (e.g. <code>cleanwarks</code>) and click <strong>Fetch from platform</strong> — it
+          pulls the WhatsApp number, display name, phone number ID, WABA ID and quality from the platform DB + live Meta
+          (no Meta copy-paste). Sending and ingestion key off the brand slug; the Meta IDs are informational. External
+          tenants later use Embedded Signup (provider <code>embedded</code>) after Meta Tech Provider approval.
         </p>
       </Section>
 

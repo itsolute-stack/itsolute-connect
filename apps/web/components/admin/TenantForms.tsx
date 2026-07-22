@@ -1,8 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { plans } from "@itsolute/db";
-import { updateTenantAction, assignPlivoNumberAction, linkWhatsAppSenderAction } from "@/lib/admin-actions";
+import {
+  updateTenantAction,
+  assignPlivoNumberAction,
+  linkWhatsAppSenderAction,
+  fetchWaBrandAction,
+} from "@/lib/admin-actions";
 
 type Result = { ok?: boolean; error?: string } | null;
 
@@ -89,26 +94,33 @@ export function EditTenantForm({
   );
 }
 
+type AssignResult = { ok?: boolean; error?: string; plivoAppId?: string; e164?: string } | null;
+
 export function AssignNumberForm({ tenantId, current }: { tenantId: string; current?: string }) {
-  const [state, action, pending] = useActionState<Result, FormData>(assignPlivoNumberAction, null);
+  const [state, action, pending] = useActionState<AssignResult, FormData>(assignPlivoNumberAction, null);
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="tenantId" value={tenantId} />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className={label}>Plivo number (E.164)</label>
-          <input name="e164" defaultValue={current ?? ""} placeholder="+912248123456" className={input} />
-        </div>
-        <div>
-          <label className={label}>Plivo Application ID (optional)</label>
-          <input name="plivoAppId" placeholder="app id" className={input} />
-        </div>
+      <div>
+        <label className={label}>Plivo number (E.164)</label>
+        <input
+          name="e164"
+          defaultValue={current ?? ""}
+          placeholder="+912248123456"
+          className={`${input} sm:max-w-xs`}
+        />
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button disabled={pending} className="btn-primary px-4 py-2 text-sm disabled:opacity-60">
-          {pending ? "Saving…" : "Assign number"}
+          {pending ? "Provisioning…" : "Provision & assign"}
         </button>
-        <Status state={state} />
+        {state?.ok && (
+          <span className="text-sm text-[var(--color-money-700)]">
+            ✓ Provisioned {state.e164}
+            {state.plivoAppId ? ` · Plivo app ${state.plivoAppId}` : ""}
+          </span>
+        )}
+        {state?.error && <span className="text-sm text-[var(--color-danger-600)]">{state.error}</span>}
       </div>
     </form>
   );
@@ -128,31 +140,84 @@ export function LinkWabaForm({
   } | null;
 }) {
   const [state, action, pending] = useActionState<Result, FormData>(linkWhatsAppSenderAction, null);
+
+  // Controlled so "Fetch from platform" can populate the fields.
+  const [brand, setBrand] = useState(sender?.platformBrandSlug ?? "");
+  const [displayE164, setDisplayE164] = useState(sender?.displayE164 ?? "");
+  const [phoneNumberId, setPhoneNumberId] = useState(sender?.phoneNumberId ?? "");
+  const [wabaId, setWabaId] = useState(sender?.wabaId ?? "");
+  const [displayName, setDisplayName] = useState(sender?.displayName ?? "");
+  const [quality, setQuality] = useState("");
+  const [fetching, setFetching] = useState(false);
+  const [fetchMsg, setFetchMsg] = useState<{ ok?: boolean; error?: string } | null>(null);
+
+  async function onFetch() {
+    setFetching(true);
+    setFetchMsg(null);
+    try {
+      const r = await fetchWaBrandAction(brand);
+      if (r.error) {
+        setFetchMsg({ error: r.error });
+      } else {
+        if (r.phoneNumberId) setPhoneNumberId(r.phoneNumberId);
+        if (r.wabaId) setWabaId(r.wabaId);
+        if (r.displayE164) setDisplayE164(r.displayE164);
+        if (r.displayName) setDisplayName(r.displayName);
+        setQuality(r.quality ?? "");
+        setFetchMsg({ ok: true });
+      }
+    } finally {
+      setFetching(false);
+    }
+  }
+
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="tenantId" value={tenantId} />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className={label}>Phone number ID</label>
-          <input name="phoneNumberId" defaultValue={sender?.phoneNumberId ?? ""} className={input} />
-        </div>
-        <div>
-          <label className={label}>WABA ID</label>
-          <input name="wabaId" defaultValue={sender?.wabaId ?? ""} className={input} />
-        </div>
-        <div>
-          <label className={label}>WhatsApp number (E.164)</label>
-          <input name="displayE164" defaultValue={sender?.displayE164 ?? ""} placeholder="+919847012345" className={input} />
-        </div>
-        <div>
-          <label className={label}>Display name</label>
-          <input name="displayName" defaultValue={sender?.displayName ?? ""} className={input} />
-        </div>
-        <div>
-          <label className={label}>Platform brand slug</label>
-          <input name="platformBrandSlug" defaultValue={sender?.platformBrandSlug ?? ""} placeholder="cleanwarks" className={input} />
+      <input type="hidden" name="quality" value={quality} />
+
+      <div>
+        <label className={label}>Platform brand slug</label>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            name="platformBrandSlug"
+            value={brand}
+            onChange={(e) => setBrand(e.target.value)}
+            placeholder="cleanwarks"
+            className={`${input} sm:max-w-xs`}
+          />
+          <button
+            type="button"
+            onClick={onFetch}
+            disabled={fetching || !brand.trim()}
+            className="rounded-lg border border-[var(--color-line)] px-3 py-2 text-sm font-medium hover:bg-black/[0.03] disabled:opacity-50"
+          >
+            {fetching ? "Fetching…" : "Fetch from platform"}
+          </button>
+          {fetchMsg?.ok && <span className="text-sm text-[var(--color-money-700)]">Filled ✓{quality ? ` · quality ${quality}` : ""}</span>}
+          {fetchMsg?.error && <span className="text-sm text-[var(--color-danger-600)]">{fetchMsg.error}</span>}
         </div>
       </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className={label}>WhatsApp number (E.164)</label>
+          <input name="displayE164" value={displayE164} onChange={(e) => setDisplayE164(e.target.value)} placeholder="+919847012345" className={input} />
+        </div>
+        <div>
+          <label className={label}>Display name (auto)</label>
+          <input name="displayName" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={input} />
+        </div>
+        <div>
+          <label className={label}>Phone number ID (auto, optional)</label>
+          <input name="phoneNumberId" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} className={input} />
+        </div>
+        <div>
+          <label className={label}>WABA ID (auto, optional)</label>
+          <input name="wabaId" value={wabaId} onChange={(e) => setWabaId(e.target.value)} className={input} />
+        </div>
+      </div>
+
       <div className="flex items-center gap-3">
         <button disabled={pending} className="btn-primary px-4 py-2 text-sm disabled:opacity-60">
           {pending ? "Saving…" : "Link WhatsApp (own WABA)"}

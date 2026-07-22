@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { prisma, plans } from "@itsolute/db";
 import type { TenantMode, Plan, TenantStatus, BillingCycle } from "@itsolute/db";
-import { createUser } from "@itsolute/auth";
+import { createUser, SESSION_COOKIE } from "@itsolute/auth";
 import { requireAdminSession } from "./session";
 
 const PLAN_IDS = Object.keys(plans.PLANS) as Plan[];
@@ -112,27 +113,41 @@ export async function updateTenantAction(_prev: unknown, formData: FormData) {
   return { ok: true };
 }
 
-// Assign an existing Plivo number to a tenant (manual). The number's Plivo
-// Application answer/hangup URLs are configured via the API provisioning service
-// (needs Plivo credentials); this records the assignment.
+// Full Plivo provisioning from the admin UI: creates the Plivo Application
+// pointed at our webhooks, assigns the (owned) number to it, and writes the
+// PlivoNumber row — the same work scripts/provision.ts does. It runs on the API
+// service (which holds the Plivo credentials); the web forwards the admin
+// session token so the API can authorize it.
 export async function assignPlivoNumberAction(_prev: unknown, formData: FormData) {
   await requireAdminSession();
   const tenantId = String(formData.get("tenantId") ?? "");
   const e164 = String(formData.get("e164") ?? "").replace(/[^\d+]/g, "");
-  const plivoAppId = String(formData.get("plivoAppId") ?? "").trim() || null;
   if (!tenantId || !/^\+\d{8,15}$/.test(e164)) return { error: "Enter a valid E.164 number (e.g. +912248123456)." };
 
-  const existing = await prisma.plivoNumber.findUnique({ where: { e164 } });
-  if (existing && existing.tenantId !== tenantId) return { error: "That number is assigned to another tenant." };
+  const apiBase = process.env.API_BASE_URL;
+  if (!apiBase) return { error: "API_BASE_URL is not set on the web app — can't reach the provisioning service." };
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
 
-  await prisma.plivoNumber.upsert({
-    where: { e164 },
-    update: { tenantId, plivoAppId, status: "active" },
-    create: { tenantId, e164, plivoAppId, status: "active" },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase.replace(/\/$/, "")}/admin/tenants/${tenantId}/plivo-number`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ mode: "assign", e164 }),
+      cache: "no-store",
+    });
+  } catch (e) {
+    return { error: `Couldn't reach the provisioning API: ${(e as Error).message}` };
+  }
+
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok) {
+    return { error: json?.error ?? `Provisioning failed (HTTP ${res.status}).` };
+  }
+
   revalidatePath(`/admin/tenants/${tenantId}`);
   revalidatePath("/admin");
-  return { ok: true };
+  return { ok: true, plivoAppId: String(json.plivoAppId ?? ""), e164: String(json.e164 ?? e164) };
 }
 
 // Link a tenant's OWN WABA (provider 'own' — the Phase-1 path). Embedded Signup
@@ -140,13 +155,22 @@ export async function assignPlivoNumberAction(_prev: unknown, formData: FormData
 export async function linkWhatsAppSenderAction(_prev: unknown, formData: FormData) {
   await requireAdminSession();
   const tenantId = String(formData.get("tenantId") ?? "");
-  const phoneNumberId = String(formData.get("phoneNumberId") ?? "").trim();
-  const wabaId = String(formData.get("wabaId") ?? "").trim() || null;
-  const displayE164 = String(formData.get("displayE164") ?? "").replace(/[^\d+]/g, "");
-  const displayName = String(formData.get("displayName") ?? "").trim() || null;
+  // Only the platform brand slug + WhatsApp number are functionally required —
+  // sending/ingestion key off the brand slug. The Meta IDs are informational.
   const platformBrandSlug = String(formData.get("platformBrandSlug") ?? "").trim() || null;
-  if (!tenantId || !phoneNumberId || !/^\+\d{8,15}$/.test(displayE164)) {
-    return { error: "Phone number ID and a valid WhatsApp number are required." };
+  const displayE164 = String(formData.get("displayE164") ?? "").replace(/[^\d+]/g, "");
+  const phoneNumberId = String(formData.get("phoneNumberId") ?? "").trim() || null;
+  const wabaId = String(formData.get("wabaId") ?? "").trim() || null;
+  const displayName = String(formData.get("displayName") ?? "").trim() || null;
+  const q = String(formData.get("quality") ?? "").toUpperCase();
+  const qualityRating = (["GREEN", "YELLOW", "RED"].includes(q) ? q : null) as
+    | "GREEN"
+    | "YELLOW"
+    | "RED"
+    | null;
+
+  if (!tenantId || !platformBrandSlug || !/^\+\d{8,15}$/.test(displayE164)) {
+    return { error: "Platform brand slug and a valid WhatsApp number are required." };
   }
 
   const existing = await prisma.whatsAppSender.findFirst({ where: { tenantId } });
@@ -157,6 +181,7 @@ export async function linkWhatsAppSenderAction(_prev: unknown, formData: FormDat
     displayE164,
     displayName,
     platformBrandSlug,
+    qualityRating,
     status: "connected" as const,
     connectedAt: new Date(),
   };
@@ -166,4 +191,49 @@ export async function linkWhatsAppSenderAction(_prev: unknown, formData: FormDat
   revalidatePath(`/admin/tenants/${tenantId}`);
   revalidatePath("/admin");
   return { ok: true };
+}
+
+// Auto-fill WABA fields from the WhatsApp platform, given just the brand slug.
+// Reads the platform's stored phone_number_id/waba_id + live Meta display/name/
+// quality via the platform's /api/notify/brand-details endpoint. The web already
+// holds WA_PLATFORM_BASE_URL + WA_PLATFORM_SECRET (for the conversation view).
+export interface WaBrandDetails {
+  ok?: boolean;
+  error?: string;
+  phoneNumberId?: string;
+  wabaId?: string;
+  displayE164?: string;
+  displayName?: string;
+  quality?: string;
+}
+export async function fetchWaBrandAction(brandSlug: string): Promise<WaBrandDetails> {
+  await requireAdminSession();
+  const base = process.env.WA_PLATFORM_BASE_URL;
+  if (!base) return { error: "WhatsApp platform not configured (WA_PLATFORM_BASE_URL)." };
+  const slug = brandSlug.trim().toLowerCase();
+  if (!slug) return { error: "Enter the platform brand slug first." };
+
+  let res: Response;
+  try {
+    res = await fetch(`${base.replace(/\/$/, "")}/api/notify/brand-details/${encodeURIComponent(slug)}`, {
+      headers: { "x-webhook-secret": process.env.WA_PLATFORM_SECRET ?? "" },
+      cache: "no-store",
+    });
+  } catch (e) {
+    return { error: `Couldn't reach the platform: ${(e as Error).message}` };
+  }
+  if (res.status === 404) return { error: `No brand "${slug}" found on the platform.` };
+  if (res.status === 401) return { error: "Platform rejected the secret (check WA_PLATFORM_SECRET)." };
+  if (!res.ok) return { error: `Platform returned HTTP ${res.status}.` };
+
+  const j: any = await res.json().catch(() => ({}));
+  const displayE164 = j.displayNumber ? "+" + String(j.displayNumber).replace(/[^\d]/g, "") : "";
+  return {
+    ok: true,
+    phoneNumberId: String(j.phoneNumberId ?? ""),
+    wabaId: String(j.wabaId ?? ""),
+    displayE164,
+    displayName: String(j.verifiedName ?? ""),
+    quality: String(j.quality ?? ""),
+  };
 }
