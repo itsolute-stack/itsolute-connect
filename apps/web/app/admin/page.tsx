@@ -9,9 +9,14 @@ export default async function AdminTenantsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Tenants</h1>
-        <p className="mt-1 text-sm text-[var(--color-ink-soft)]">All businesses on ITSolute Connect</p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Tenants</h1>
+          <p className="mt-1 text-sm text-[var(--color-ink-soft)]">All businesses on ITSolute Connect</p>
+        </div>
+        <Link href="/admin/tenants/new" className="btn-primary shrink-0 px-4 py-2 text-sm">
+          + Add tenant
+        </Link>
       </div>
 
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
