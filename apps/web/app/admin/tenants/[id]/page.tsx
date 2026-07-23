@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTenantAdmin } from "@/lib/admin-queries";
-import { EditTenantForm, AssignNumberForm, LinkWabaForm } from "@/components/admin/TenantForms";
+import { EditTenantForm, AssignNumberForm, LinkWabaForm, RecoveryTemplateForm } from "@/components/admin/TenantForms";
 import { WhatsAppHealth } from "@/components/pills";
 import { plans } from "@itsolute/db";
 import { inr } from "@/lib/format";
@@ -14,6 +14,10 @@ export default async function AdminTenantDetail({ params }: { params: Promise<{ 
   const sender = tenant.whatsappSenders[0] ?? null;
   const number = tenant.plivoNumbers[0] ?? null;
   const plan = plans.planFor(tenant.plan);
+  const recoveryTemplate =
+    tenant.templates.find((t) => t.name === "recovery_default_en") ??
+    tenant.templates.find((t) => t.category === "utility") ??
+    null;
 
   return (
     <div className="space-y-6">
@@ -65,6 +69,20 @@ export default async function AdminTenantDetail({ params }: { params: Promise<{ 
           pulls the WhatsApp number, display name, phone number ID, WABA ID and quality from the platform DB + live Meta
           (no Meta copy-paste). Sending and ingestion key off the brand slug; the Meta IDs are informational. External
           tenants later use Embedded Signup (provider <code>embedded</code>) after Meta Tech Provider approval.
+        </p>
+      </Section>
+
+      <Section title="Recovery template">
+        <RecoveryTemplateForm
+          tenantId={tenant.id}
+          hasSender={Boolean(sender?.platformBrandSlug)}
+          currentStatus={recoveryTemplate?.status ?? null}
+        />
+        <p className="mt-3 text-xs text-[var(--color-ink-faint)]">
+          One <code>utility</code> template is all a tenant needs for missed-call recovery. This submits it to Meta for
+          you (via the WhatsApp platform) and records it here — no more doing it by hand. Link WhatsApp first; the
+          template goes under that brand&apos;s WABA. It sends live once Meta shows <strong>approved</strong> (usually
+          minutes–hours) — use <strong>Refresh status</strong> to re-check.
         </p>
       </Section>
 

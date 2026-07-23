@@ -7,6 +7,9 @@ import {
   assignPlivoNumberAction,
   linkWhatsAppSenderAction,
   fetchWaBrandAction,
+  submitRecoveryTemplateAction,
+  refreshRecoveryTemplateAction,
+  type TemplateActionResult,
 } from "@/lib/admin-actions";
 
 type Result = { ok?: boolean; error?: string } | null;
@@ -225,5 +228,83 @@ export function LinkWabaForm({
         <Status state={state} />
       </div>
     </form>
+  );
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+  if (!status) return <span className="text-sm text-[var(--color-ink-faint)]">not created yet</span>;
+  const s = status.toLowerCase();
+  const cls =
+    s === "approved"
+      ? "bg-emerald-50 text-emerald-700"
+      : s === "rejected"
+        ? "bg-red-50 text-red-700"
+        : "bg-amber-50 text-amber-700";
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{s}</span>;
+}
+
+export function RecoveryTemplateForm({
+  tenantId,
+  hasSender,
+  currentStatus,
+}: {
+  tenantId: string;
+  hasSender: boolean;
+  currentStatus: string | null;
+}) {
+  const [busy, setBusy] = useState<"submit" | "refresh" | null>(null);
+  const [result, setResult] = useState<TemplateActionResult | null>(null);
+  const [status, setStatus] = useState<string | null>(currentStatus);
+
+  async function run(kind: "submit" | "refresh") {
+    setBusy(kind);
+    setResult(null);
+    try {
+      const r =
+        kind === "submit"
+          ? await submitRecoveryTemplateAction(tenantId)
+          : await refreshRecoveryTemplateAction(tenantId);
+      setResult(r);
+      if (r.ok && r.status) setStatus(r.status);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-[var(--color-ink-soft)]">Recovery template</span>
+        <StatusBadge status={status} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => run("submit")}
+          disabled={!hasSender || busy !== null}
+          className="btn-primary px-4 py-2 text-sm disabled:opacity-60"
+        >
+          {busy === "submit" ? "Submitting…" : status ? "Re-submit to Meta" : "Create & submit to Meta"}
+        </button>
+        <button
+          type="button"
+          onClick={() => run("refresh")}
+          disabled={!hasSender || busy !== null}
+          className="rounded-lg border border-[var(--color-line)] px-3 py-2 text-sm font-medium hover:bg-black/[0.03] disabled:opacity-50"
+        >
+          {busy === "refresh" ? "Checking…" : "Refresh status"}
+        </button>
+
+        {result?.ok && (
+          <span className="text-sm text-[var(--color-money-700)]">
+            ✓ {result.status ? `Meta status: ${result.status}` : "Done"}
+            {result.metaId ? ` · id ${result.metaId}` : ""}
+          </span>
+        )}
+        {result?.error && <span className="text-sm text-[var(--color-danger-600)]">{result.error}</span>}
+      </div>
+      {result?.note && <p className="text-xs text-[var(--color-ink-faint)]">{result.note}</p>}
+    </div>
   );
 }

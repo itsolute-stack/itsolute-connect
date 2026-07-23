@@ -169,14 +169,24 @@ WhatsApp won't let you message someone who called (a "cold" contact) with free t
 
 A recovery message ("sorry we missed your call, here's how to book") is a **utility** message — it's a service follow-up, not promotion. Meta requires it to be **category = utility**. A *marketing* template will get throttled, rejected, or drag the number's quality down. Utility is required, and it's what keeps the number healthy.
 
-### How a template exists for a tenant
+### How many you need
 
-There are **two places** a template lives, and both must line up:
+**Just one** — the missed-call recovery template — for both Mode A and Mode B. It's the only message we start (a "business-initiated" message), so it's the only one that needs a template. The caller's *replies* come back inside WhatsApp's 24-hour window, so those go out as normal text with no template. (Booking-confirmed / reminder templates are optional extras, not required for recovery.)
 
-1. **In Meta (WhatsApp Manager)** — the actual template, written and **submitted for approval** under that brand's WhatsApp account, **category Utility**. Meta reviews it (usually minutes to a few hours). It sends by **name**, so note the exact name.
-2. **In Connect (our database)** — a matching template row marked `utility` + `approved`. When a call comes in, our worker looks for a template for that tenant first, and if there isn't one it falls back to the **shared default** (`recovery_default_en`) that ships with the system. So most tenants are covered by the shared default out of the box — as long as a template *with that same name* is approved on Meta for their brand.
+### The easy way — the "Create & submit to Meta" button (automated)
 
-You can see the template rows and their status any time on the **Templates** admin page (it's a read-only list — creation/approval happens in Meta).
+On the tenant's detail page there's a **Recovery template** section. Once WhatsApp is linked (Step 5), click **Create & submit to Meta**. That does the whole thing for you:
+
+- Submits the recovery template (category **utility**) to Meta for approval, **under that tenant's WhatsApp brand**.
+- Records a matching template row in Connect so the recovery worker and the Templates page can see it.
+
+It comes back showing the Meta status — almost always **pending** at first. Meta reviews it (usually minutes to a few hours). Click **Refresh status** to re-check; once it flips to **approved**, recovery messages send live. No WhatsApp Manager, no copy-paste. (If the template already exists on Meta, the button just records its current status instead of erroring.)
+
+> **This is new — it used to be manual.** Before, you (or I) had to write and submit the template in Meta's WhatsApp Manager by hand for every tenant — that's the step we did for Clean Warks. The button replaces that. You only fall back to doing it by hand in WhatsApp Manager if you want a *custom* wording different from the standard recovery message.
+
+### What's happening underneath (so the failures make sense)
+
+A template lives in **two places** and both must line up: the approved template **on Meta** (it sends by name), and a **row in Connect** marked `utility` + `approved`. The button keeps them in sync. If a tenant has no row of its own, the worker falls back to the **shared default** (`recovery_default_en`) that ships with the system — which is why the button submits under that same name, so everything matches. You can see all template rows and their status on the **Templates** admin page.
 
 ### What happens if there isn't one — the exact failure we hit with Clean Warks
 

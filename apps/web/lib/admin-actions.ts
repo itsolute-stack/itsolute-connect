@@ -7,6 +7,7 @@ import { prisma, plans } from "@itsolute/db";
 import type { TenantMode, Plan, TenantStatus, BillingCycle } from "@itsolute/db";
 import { createUser, SESSION_COOKIE } from "@itsolute/auth";
 import { requireAdminSession } from "./session";
+import { waGet, waPost } from "./wa-platform-client";
 
 const PLAN_IDS = Object.keys(plans.PLANS) as Plan[];
 
@@ -236,4 +237,112 @@ export async function fetchWaBrandAction(brandSlug: string): Promise<WaBrandDeta
     displayName: String(j.verifiedName ?? ""),
     quality: String(j.quality ?? ""),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Recovery template automation (spec §9). Onboarding used to require creating +
+// approving the missed-call template on Meta by hand (the Clean Warks step).
+// This submits it for us: it calls the WhatsApp platform's existing
+// POST /api/templates (which creates the template on Meta AND upserts the
+// platform DB), then mirrors a matching Connect Template row so the recovery
+// worker + Templates page see it. Category is always `utility` — required for a
+// business-initiated recovery message. Only ONE template is needed per tenant.
+// ---------------------------------------------------------------------------
+
+// Matches the shared default seeded in packages/db (name + body), so a brand
+// that gets this approved lines up with the worker's fallback template.
+const RECOVERY_TEMPLATE_NAME = "recovery_default_en";
+const RECOVERY_TEMPLATE_BODY =
+  "Hi, this is {{1}}. Sorry we missed your call just now — we'd love to help. " +
+  "You can book a time here: {{2}} or just reply to this message and we'll get right back to you.";
+
+function mapMetaStatus(s: string): "approved" | "pending" | "rejected" {
+  const u = String(s ?? "").toUpperCase();
+  if (u === "APPROVED") return "approved";
+  if (u === "REJECTED") return "rejected";
+  return "pending"; // PENDING, IN_APPEAL, PAUSED, DISABLED, PENDING_DELETION…
+}
+
+export interface TemplateActionResult {
+  ok?: boolean;
+  error?: string;
+  status?: string; // raw Meta status (PENDING/APPROVED/REJECTED…)
+  metaId?: string;
+  note?: string;
+}
+
+async function tenantWithBrand(tenantId: string) {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    include: { whatsappSenders: { orderBy: { createdAt: "desc" } } },
+  });
+  if (!tenant) return { error: "Tenant not found." as const };
+  const sender = tenant.whatsappSenders.find((s) => s.platformBrandSlug);
+  if (!sender?.platformBrandSlug) {
+    return { error: "Link the tenant's WhatsApp first — the recovery template is submitted under its WhatsApp brand." as const };
+  }
+  return { tenant, brandSlug: sender.platformBrandSlug };
+}
+
+async function mirrorConnectTemplate(tenantId: string, status: "approved" | "pending" | "rejected") {
+  const existing = await prisma.template.findFirst({ where: { tenantId, name: RECOVERY_TEMPLATE_NAME } });
+  const data = { name: RECOVERY_TEMPLATE_NAME, language: "en", category: "utility" as const, status, body: RECOVERY_TEMPLATE_BODY };
+  if (existing) await prisma.template.update({ where: { id: existing.id }, data });
+  else await prisma.template.create({ data: { tenantId, ...data } });
+}
+
+/** Read the recovery template's current status from the platform (Meta-synced). */
+async function syncRecoveryStatus(tenantId: string, brandSlug: string): Promise<TemplateActionResult> {
+  const res = await waGet<{ templates?: { name: string; status: string }[] }>(
+    `/api/templates?brand=${encodeURIComponent(brandSlug)}`,
+  );
+  if (!res.ok) return { error: res.error ?? "Couldn't reach the WhatsApp platform." };
+  const t = (res.data?.templates ?? []).find((x) => x.name === RECOVERY_TEMPLATE_NAME);
+  if (!t) return { error: `No "${RECOVERY_TEMPLATE_NAME}" template found on the platform yet.` };
+  await mirrorConnectTemplate(tenantId, mapMetaStatus(t.status));
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  return { ok: true, status: t.status };
+}
+
+/** Create + submit the tenant's recovery template to Meta, and record it. */
+export async function submitRecoveryTemplateAction(tenantId: string): Promise<TemplateActionResult> {
+  await requireAdminSession();
+  const ctx = await tenantWithBrand(tenantId);
+  if ("error" in ctx) return { error: ctx.error };
+  const { tenant, brandSlug } = ctx;
+
+  const bookingExample = tenant.bookingUrl || "https://example.com/book";
+  const res = await waPost<{ template?: { status?: string }; metaId?: string; error?: string }>("/api/templates", {
+    brand: brandSlug,
+    name: RECOVERY_TEMPLATE_NAME,
+    category: "utility",
+    language: "en",
+    bodyText: RECOVERY_TEMPLATE_BODY,
+    variableExamples: [tenant.brandName, bookingExample],
+  });
+
+  if (!res.ok) {
+    // Already submitted/approved on Meta → not an error; just sync the status.
+    if (/exist|already/i.test(res.error ?? "")) {
+      const synced = await syncRecoveryStatus(tenantId, brandSlug);
+      return synced.ok
+        ? { ...synced, note: "Template already existed on Meta — recorded its current status." }
+        : { error: res.error };
+    }
+    return { error: res.error };
+  }
+
+  const metaStatus = res.data?.template?.status ?? "PENDING";
+  await mirrorConnectTemplate(tenantId, mapMetaStatus(metaStatus));
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  revalidatePath("/admin/templates");
+  return { ok: true, status: metaStatus, metaId: res.data?.metaId };
+}
+
+/** Re-check the recovery template's Meta status and update the Connect row. */
+export async function refreshRecoveryTemplateAction(tenantId: string): Promise<TemplateActionResult> {
+  await requireAdminSession();
+  const ctx = await tenantWithBrand(tenantId);
+  if ("error" in ctx) return { error: ctx.error };
+  return syncRecoveryStatus(tenantId, ctx.brandSlug);
 }
