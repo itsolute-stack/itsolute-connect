@@ -78,6 +78,29 @@ export async function handleIvrInput(
   }
 }
 
+/**
+ * Caller ID for outbound legs to staff. It MUST be a Plivo number we OWN — the
+ * DID the call came in on — NOT the external caller's number. Presenting a
+ * number we don't own makes Plivo refuse to anchor media for the bridge and it
+ * fails the leg with the hangup cause "Violates Media Anchoring". Falls back to
+ * the tenant's active DID if the call didn't record which number it hit.
+ */
+async function ownedCallerId(call: Call): Promise<string | undefined> {
+  if (call.plivoNumberId) {
+    const n = await prisma.plivoNumber.findUnique({
+      where: { id: call.plivoNumberId },
+      select: { e164: true },
+    });
+    if (n?.e164) return n.e164;
+  }
+  const active = await prisma.plivoNumber.findFirst({
+    where: { tenantId: call.tenantId, status: "active" },
+    orderBy: { createdAt: "desc" },
+    select: { e164: true },
+  });
+  return active?.e164 ?? undefined;
+}
+
 /** Ring the staff member at `index`; if none, fall through to recovery. */
 export async function startHunt(tenant: Tenant, call: Call, index: number): Promise<string> {
   const staff = await staffInOrder(tenant.id);
@@ -92,7 +115,8 @@ export async function startHunt(tenant: Tenant, call: Call, index: number): Prom
   return dialStaff(s.e164, action("/webhooks/plivo/dial-status", { u: call.plivoCallUuid ?? "", i: index }), {
     timeoutSec: 20,
     record: tenant.recordCalls,
-    callerId: call.callerE164,
+    // Dial FROM our owned DID, not the caller's number — see ownedCallerId.
+    callerId: await ownedCallerId(call),
   });
 }
 
