@@ -49,7 +49,7 @@ export function ivrMenu(prompt: string, action: string, language = "en-IN"): str
 export function dialStaff(
   numberE164: string,
   action: string,
-  opts: { timeoutSec?: number; record?: boolean; callerId?: string } = {},
+  opts: { timeoutSec?: number; record?: boolean; callerId?: string; speakBefore?: string; language?: string } = {},
 ): string {
   const attrs = [
     `action="${escapeXml(action)}"`,
@@ -58,9 +58,14 @@ export function dialStaff(
     ...(opts.callerId ? [`callerId="${escapeXml(opts.callerId)}"`] : []),
     ...(opts.record ? [`record="true"`, `redirect="false"`] : []),
   ].join(" ");
+  // Optionally speak a greeting (e.g. a ring_staff node's prompt) before dialing.
+  const speak = opts.speakBefore
+    ? `  <Speak language="${escapeXml(opts.language ?? "en-IN")}" voice="Polly.Aditi">${escapeXml(opts.speakBefore)}</Speak>\n`
+    : "";
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<Response>\n` +
+    speak +
     `  <Dial ${attrs}>\n` +
     `    <Number>${escapeXml(numberE164)}</Number>\n` +
     `  </Dial>\n` +

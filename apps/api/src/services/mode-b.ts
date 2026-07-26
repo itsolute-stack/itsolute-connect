@@ -1,5 +1,5 @@
 import { prisma } from "@itsolute/db";
-import type { Tenant, Call } from "@itsolute/db";
+import type { Tenant, Call, IvrNode } from "@itsolute/db";
 import { env } from "../env.js";
 import { ivrMenu, dialStaff, speakThenHangup, hangup } from "../lib/plivo-xml.js";
 import { localDateYmd } from "../lib/business-hours.js";
@@ -38,7 +38,31 @@ async function staffInOrder(tenantId: string) {
   return prisma.staff.findMany({ where: { tenantId }, orderBy: { ringOrder: "asc" } });
 }
 
-/** Entry point for a Mode B call: IVR root if configured, else start the hunt. */
+/**
+ * Produce the XML for whatever an IVR node's action says to do. Used for both
+ * the root node (call entry) and a matched child, so a node behaves the same
+ * wherever it sits. Only `submenu` collects a keypress — every other action
+ * plays the node's prompt then proceeds. (The old code always issued a
+ * GetDigits for the root regardless of its action, so a `ring_staff` root
+ * waited for a keypress that never came and timed out.)
+ */
+async function runNodeAction(tenant: Tenant, call: Call, node: IvrNode): Promise<string> {
+  switch (node.action) {
+    case "submenu":
+      // A menu: speak the prompt and wait for a DTMF digit.
+      return ivrMenu(node.prompt, action("/webhooks/plivo/ivr", { u: call.plivoCallUuid ?? "", n: node.id }));
+    case "ring_staff":
+      // Speak the greeting/prompt, then go straight to the staff hunt — no keypress.
+      return startHunt(tenant, call, 0, node.prompt);
+    case "voicemail":
+      return speakThenHangup(node.prompt || `${tenant.brandName}. Please leave a message after the tone.`);
+    case "hangup":
+    default:
+      return node.prompt ? speakThenHangup(node.prompt) : hangup();
+  }
+}
+
+/** Entry point for a Mode B call: run the IVR root if configured, else hunt. */
 export async function startModeBCall(tenant: Tenant, call: Call): Promise<string> {
   const root = await prisma.ivrNode.findFirst({
     where: { tenantId: tenant.id, parentId: null },
@@ -46,7 +70,7 @@ export async function startModeBCall(tenant: Tenant, call: Call): Promise<string
   });
   if (root) {
     await appendRoute(call.id, { type: "ivr", nodeId: root.id });
-    return ivrMenu(root.prompt, action("/webhooks/plivo/ivr", { u: call.plivoCallUuid ?? "", n: root.id }));
+    return runNodeAction(tenant, call, root);
   }
   return startHunt(tenant, call, 0);
 }
@@ -64,18 +88,7 @@ export async function handleIvrInput(
     return startHunt(tenant, call, 0);
   }
   await appendRoute(call.id, { type: "ivr", nodeId: child.id, key: digit });
-
-  switch (child.action) {
-    case "submenu":
-      return ivrMenu(child.prompt, action("/webhooks/plivo/ivr", { u: call.plivoCallUuid ?? "", n: child.id }));
-    case "ring_staff":
-      return startHunt(tenant, call, 0);
-    case "voicemail":
-      return speakThenHangup(`${tenant.brandName}. Please leave a message after the tone.`);
-    case "hangup":
-    default:
-      return hangup();
-  }
+  return runNodeAction(tenant, call, child);
 }
 
 /**
@@ -101,8 +114,17 @@ async function ownedCallerId(call: Call): Promise<string | undefined> {
   return active?.e164 ?? undefined;
 }
 
-/** Ring the staff member at `index`; if none, fall through to recovery. */
-export async function startHunt(tenant: Tenant, call: Call, index: number): Promise<string> {
+/**
+ * Ring the staff member at `index`; if none, fall through to recovery.
+ * `preamble` (spoken once before the first ring) lets a `ring_staff` node play
+ * its greeting before dialing; hunt-to-next hops pass none so it isn't repeated.
+ */
+export async function startHunt(
+  tenant: Tenant,
+  call: Call,
+  index: number,
+  preamble?: string,
+): Promise<string> {
   const staff = await staffInOrder(tenant.id);
   if (index >= staff.length) {
     // Nobody available → recovery flow (hangup webhook marks missed + enqueues).
@@ -117,6 +139,7 @@ export async function startHunt(tenant: Tenant, call: Call, index: number): Prom
     record: tenant.recordCalls,
     // Dial FROM our owned DID, not the caller's number — see ownedCallerId.
     callerId: await ownedCallerId(call),
+    speakBefore: preamble,
   });
 }
 
