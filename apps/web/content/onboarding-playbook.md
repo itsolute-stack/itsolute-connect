@@ -128,36 +128,64 @@ Here's the honest truth: **Jio, Airtel, Vi, and BSNL are all GSM networks, so th
 
 ## 5. Connect WhatsApp
 
-The recovery message is sent from the **business's own WhatsApp number**, through our WhatsApp platform. There are two paths.
+The recovery message is sent from the **business's own WhatsApp number**, through our WhatsApp platform. To make that work, we need the business to connect their WhatsApp to us.
 
-### 5a. Our own businesses — where we already run the WABA (the normal path)
+### Why we do this by hand right now (read this once, so it makes sense)
 
-For businesses whose WhatsApp we already host on our platform (e.g. Clean Warks, ITSolute), you don't copy anything from Meta by hand. On the tenant's detail page → **WhatsApp sender** section:
+The slick one-click way to connect WhatsApp — Meta's "Embedded Signup," where the owner just logs in with Facebook and clicks Allow — is only available to companies Meta has approved as a **Tech Provider**. **Our Tech Provider application was rejected**, so that one-click flow is off the table for the foreseeable future. Until we re-apply and get approved, **every** customer connects the manual way: the business owner generates a permanent access token inside their own Meta account and hands it to us. It's a few extra minutes on a call — a temporary manual step, not how it'll always be.
 
-1. Type the **platform brand slug** — the short name our WhatsApp platform knows them by (e.g. `cleanwarks`). Note this is **not** always the same as the tenant slug (`clean-warks`), so use the WhatsApp platform's slug.
-2. Click **Fetch from platform**.
+### 5a. The manual connection — the primary path for every customer
 
-That pulls their details straight from our WhatsApp platform (its database plus a live check with Meta) and fills the fields:
+You'll do this **with the business owner**, on a phone call or screen-share, because it all happens inside *their* Meta account and only they can see it. Before you start, make sure:
 
-| Field | Filled automatically? | Where it comes from |
-|---|---|---|
-| WhatsApp number (E.164) | ✅ Yes | Live from Meta |
-| Display name | ✅ Yes | Live from Meta (the approved business name) |
-| Phone number ID | ✅ Yes | Platform database |
-| Quality rating (GREEN/YELLOW/RED) | ✅ Yes | Live from Meta |
-| **WABA ID** | ⚠️ **Only if it's stored** | Platform database — blank if that brand row never had one saved |
+- They can log into their business's Facebook/Meta account, and they are an **admin** of it.
+- They already have a **WhatsApp Business Account (WABA)** set up with their number (if not, that's a separate setup first).
 
-> **The one caveat — WABA ID.** It auto-fills *only if* the WhatsApp platform actually has it stored for that brand. If it comes back blank, that single field is a manual paste from Meta (WhatsApp Manager → the WABA's settings). Nothing else needs manual entry. And it's not urgent — sending and message tracking key off the **brand slug**, not the WABA ID, so a blank WABA ID won't stop messages going out. It's informational.
+Then walk them through this, step by step. The words in quotes are roughly what you can read out loud.
 
-Then click **Link WhatsApp (own WABA)**. Only the **brand slug + WhatsApp number** are actually required. The number's access token never leaves the platform — we never see it.
+1. **Log in.** "Go to **business.facebook.com** and log in with your business Facebook account." Make sure it's the account that owns their business/WhatsApp, not a personal one.
+2. **Open Business Settings.** "Click the **gear / Settings** icon — that's **Business Settings**."
+3. **Create a System User.** "On the left, open **Users → System Users**, then click **Add**. Name it something like **ITSolute Connect**, set the role to **Admin**, and click **Create System User**." (A system user is just a permanent, non-human login that lets us send on their behalf — it's normal.)
+4. **Give it access to their WhatsApp account.** "With that new system user selected, click **Add Assets** (or **Assign Assets**) → **WhatsApp Accounts** → tick your **WhatsApp Business Account** → turn on **Full control / Manage**, then **Save**."
+5. **Generate the permanent token.** "Still on the system user, click **Generate New Token**." Then, in that dialog: pick the **App** (if there's more than one, choose the one connected to their WhatsApp account); set **Token expiration** to **Never**; tick the **two** permissions **`whatsapp_business_management`** and **`whatsapp_business_messaging`**; and click **Generate Token**. The token appears **once** — have them **copy it immediately** and paste it somewhere safe to send to you. If they lose it, they just generate a new one. Because expiration is **Never**, this token keeps working — that's what makes it a permanent connection.
+6. **Copy the WABA ID.** "Go to **Business Settings → Accounts → WhatsApp Accounts** (or open **WhatsApp Manager**), click your WhatsApp account, and copy the **WhatsApp Business Account ID** — a long number." Send that to you too.
+7. **Copy the Phone Number ID.** "In **WhatsApp Manager → Phone Numbers**, click your number, and copy the **Phone number ID**." Be clear with them: this is **not** the phone number itself — it's a separate long number that sits next to it. That's the one we need.
+8. **Note the number and display name.** Take down the actual **WhatsApp number** (with country code, e.g. `+91 98765 43210`) and the **display name** Meta shows for it (their approved business name).
 
-**What has to be true for the fetch to work:** the brand must exist on our WhatsApp platform with a valid access token, and the platform must be reachable (it's configured on the web app). If the fetch says "no brand found," the slug is wrong or that brand isn't set up on the platform yet.
+By the end you should have five things from them: **the permanent token, the WABA ID, the Phone Number ID, the WhatsApp number, and the display name.**
 
-### 5b. Outside customers — Embedded Signup (NOT available yet)
+### The number catch — is their number already on the normal WhatsApp app?
 
-For a future external customer who brings their *own* WhatsApp that we don't host, the intended path is **Meta Embedded Signup** (provider `embedded`) — they'd click through a Meta popup and authorize us directly.
+A phone number can only live in **one** WhatsApp at a time — either the everyday **WhatsApp / WhatsApp Business app** on their phone, **or** the WhatsApp Business **API** (which is what we use). It can't be both. So if the number they want to use is currently active in the regular WhatsApp app, you have two options — explain both and let them choose:
 
-**Be honest with yourself and them: this does not work today.** Embedded Signup only functions once **Meta grants us Tech Provider approval**, which we don't have yet. Until then, there is no self-serve way to onboard an outside business's WhatsApp. Don't promise it. For now, every live WhatsApp sender goes through path 5a on a brand we host.
+- **Option A — Move that number over to the API.** They remove/deregister the number from the phone app, and it gets registered on the Business API instead. **Good:** they keep their known number that customers already have. **Trade-off:** they lose the chat app for that number — messages now flow through the API/our platform, not the green WhatsApp app on their phone.
+- **Option B — Use a second number for the API.** Keep their existing WhatsApp app number exactly as-is, and use a **different** number (a spare SIM, or a landline that can receive a verification call/SMS) for the Business API. **Good:** zero disruption to their current WhatsApp. **Trade-off:** the recovery messages go out from a different number than the one customers may recognize.
+
+For most small businesses that live in the WhatsApp app all day, **Option B** is the calmer choice. If they rarely use the app and care most about the recognizable number, **Option A**.
+
+### Then, on our side — register it and link the tenant
+
+Once you have those five things:
+
+1. **Give the token + IDs to our WhatsApp platform** for that brand. This is where messages actually send from, and it's the one place the **access token** is stored. **Connect itself never stores the token** — that's why the admin form below never asks for it. You'll register the brand under a short **brand slug** you choose (e.g. `acmeclinic`).
+2. In Connect admin, open the **tenant's page → "WhatsApp sender (own WABA)"** and fill in the **Platform brand slug** (the slug you just set, e.g. `acmeclinic`), the **WhatsApp number** in E.164 form (e.g. `+919876543210`), the **Display name**, the **Phone Number ID**, and the **WABA ID**.
+3. Click **Link WhatsApp (own WABA)**.
+
+**Shortcut:** once the brand exists on the platform, you don't have to paste all five — just type the **brand slug** and click **Fetch from platform**, and it fills the WhatsApp number, display name, Phone Number ID, WABA ID (if stored), and quality for you. Manual paste is always the fallback.
+
+### 5b. Embedded Signup — on hold, not scrapped
+
+Embedded Signup (the one-click "log in with Facebook and Allow" flow, provider `embedded`) stays the goal, but it's **on hold**: our Meta Tech Provider application was rejected, so we can't offer it right now. We'll revisit it only if we re-apply and Meta approves us. Until that day, **do not** offer or promise the one-click flow to anyone — the manual connection in 5a is how every customer gets connected.
+
+### If the token is missing a permission (what it looks like)
+
+The most common mistake is generating the token **without both permissions ticked** (Step 5). Here's the catch: a token missing a permission still *looks* fine — it links without complaint. The problem only surfaces when you actually try to use it.
+
+The clearest tell comes at **Step 6**: when you click **Create & submit to Meta** for the recovery template, it **fails with a real Meta error** instead of a green success — something like `(#200) requires whatsapp_business_management permission`, or an OAuth/permissions error naming the token or a missing scope. That is **not** a bug on our side, and **not** a template problem — it's the token missing a scope.
+
+**The fix:** have the owner **generate a fresh token** (Step 5) with **both** `whatsapp_business_management` and `whatsapp_business_messaging` ticked and expiration set to **Never**, give you the new token, update it on our platform for that brand, and run Step 6 again.
+
+**How to tell it apart from other failures:** if the error instead mentions the **template name, category, or the WABA** — not permissions — it's a template/setup issue (see Steps 6 and 8), not the token. A permissions/scope wording in the error is what points at the token specifically.
 
 ---
 
@@ -233,6 +261,7 @@ Real things we've actually hit, and what they mean.
 | **"Error Reaching Answer URL"** (in Plivo) | Plivo tried to hand the call to our webhook and couldn't — the API is down, `PLIVO_WEBHOOK_BASE_URL` is wrong, or the call's signature failed our check (we return 403 on an unverified webhook). | Check the API is up and healthy; confirm the Plivo Application's answer URL points at the live API; confirm the Plivo auth credentials match. |
 | **"Custom Id cannot contain :"** | Old bug — we were putting a `:` in a Plivo custom id, which Plivo rejects. | **Already fixed.** Listed here only so it's recognizable if it ever resurfaces in old logs. |
 | **WhatsApp send fails, no detail** | A send bounced but the reason was buried. The worker now logs the real HTTP status, Meta error code, and body, so failures explain themselves. | Check the worker logs — you'll see `httpStatus` / `metaCode` / `body`. Usually: template not approved, template **name mismatch**, wrong/expired access token, or wrong category. |
+| **"Create & submit to Meta" fails with a permissions error** | The WhatsApp access token was generated without both required scopes (`whatsapp_business_management` + `whatsapp_business_messaging`). It links fine but can't submit templates. | Regenerate the token in Meta with **both** permissions ticked and expiration **Never**, update it on the platform for that brand, retry. See Step 5. |
 | **Quality rating goes YELLOW or RED** | Meta flagged the number — too many messages blocked/reported, or spammy content. RED can pause the number's ability to send. | Slow down; make sure you're on a **utility** template with a genuine, helpful tone; stop messaging people who clearly don't want it. Quality recovers over time with clean sending. |
 | **Worker log: "subscribing to 0 brands"** | The real-time WhatsApp listener found **no connected sender with a brand slug** to subscribe to — so live delivery/reply updates are off. | Link the tenant's WhatsApp (Step 5) so a sender with a `platformBrandSlug` exists, then restart the worker. |
 | **Missed calls logged, but no messages** | Almost always `no_template` (no approved utility template lined up) or `no_sender` (WhatsApp not linked). | Check the RecoveryMessage **reason**. Fix per Step 5 or Step 6. |
