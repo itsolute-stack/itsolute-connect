@@ -22,16 +22,43 @@ function webhookBase() {
   return env.plivoWebhookBaseUrl.replace(/\/$/, "");
 }
 
-/** Create (or reuse) a Plivo Application whose answer/hangup URLs are our webhooks. */
+/** Find an existing Plivo Application by its exact name, or null. Paginates
+ * defensively so we don't miss it if the account has many apps. */
+async function findApplicationByName(c: ReturnType<typeof client>, name: string): Promise<string | null> {
+  const limit = 20;
+  for (let offset = 0; offset < 20 * limit; offset += limit) {
+    const res: any = await c.applications.list({ limit, offset } as any);
+    const objects: any[] = res?.objects ?? (Array.isArray(res) ? res : []);
+    const match = objects.find((a) => (a.appName ?? a.app_name) === name);
+    if (match) return match.appId ?? match.app_id ?? null;
+    if (objects.length < limit) break; // last page
+  }
+  return null;
+}
+
+/**
+ * Ensure a Plivo Application named `name` exists and points at our webhooks,
+ * returning its id. Reuses an existing app of that name (updating its URLs in
+ * case the webhook base changed) instead of creating a duplicate — otherwise
+ * every re-provision / reassignment would orphan the previous app in Plivo.
+ */
 export async function ensureApplication(name: string): Promise<string> {
   const c = client();
   const base = webhookBase();
-  const created = await c.applications.create(name, {
+  const urls = {
     answerUrl: `${base}/webhooks/plivo/incoming`,
     answerMethod: "POST",
     hangupUrl: `${base}/webhooks/plivo/hangup`,
     hangupMethod: "POST",
-  });
+  };
+
+  const existingId = await findApplicationByName(c, name);
+  if (existingId) {
+    await c.applications.update(existingId, urls as any);
+    return existingId;
+  }
+
+  const created = await c.applications.create(name, urls);
   // SDK returns the new application id.
   return (created as any).appId ?? (created as any).api_id;
 }

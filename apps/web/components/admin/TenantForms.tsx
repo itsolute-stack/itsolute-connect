@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useEffect } from "react";
 import { plans } from "@itsolute/db";
 import {
   updateTenantAction,
@@ -97,10 +97,27 @@ export function EditTenantForm({
   );
 }
 
-type AssignResult = { ok?: boolean; error?: string; plivoAppId?: string; e164?: string } | null;
+type AssignResult = {
+  ok?: boolean;
+  error?: string;
+  plivoAppId?: string;
+  e164?: string;
+  movedFrom?: string | null;
+  needsConfirm?: boolean;
+  currentTenantName?: string;
+  currentTenantSlug?: string;
+} | null;
 
 export function AssignNumberForm({ tenantId, current }: { tenantId: string; current?: string }) {
   const [state, action, pending] = useActionState<AssignResult, FormData>(assignPlivoNumberAction, null);
+
+  // The action returns needsConfirm when the number is already on another
+  // tenant. Show a block-and-confirm step; re-showing on each fresh result so
+  // "Cancel" can't be sticky and hide a genuine second warning.
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => setDismissed(false), [state]);
+  const showConfirm = Boolean(state?.needsConfirm) && !dismissed;
+
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="tenantId" value={tenantId} />
@@ -113,18 +130,50 @@ export function AssignNumberForm({ tenantId, current }: { tenantId: string; curr
           className={`${input} sm:max-w-xs`}
         />
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <button disabled={pending} className="btn-primary px-4 py-2 text-sm disabled:opacity-60">
-          {pending ? "Provisioning…" : "Provision & assign"}
-        </button>
-        {state?.ok && (
-          <span className="text-sm text-[var(--color-money-700)]">
-            ✓ Provisioned {state.e164}
-            {state.plivoAppId ? ` · Plivo app ${state.plivoAppId}` : ""}
-          </span>
-        )}
-        {state?.error && <span className="text-sm text-[var(--color-danger-600)]">{state.error}</span>}
-      </div>
+
+      {showConfirm ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
+          <p className="font-medium text-amber-800">
+            ⚠️ {state!.e164} is already assigned to {state!.currentTenantName}
+            {state!.currentTenantSlug ? ` (${state!.currentTenantSlug})` : ""}.
+          </p>
+          <p className="mt-1 text-amber-700">
+            Reassigning will <strong>disconnect it from {state!.currentTenantName}</strong> — their calls stop routing —
+            and move it to this tenant. Only continue if that number should no longer serve {state!.currentTenantName}.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              name="confirm"
+              value="true"
+              disabled={pending}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+            >
+              {pending ? "Reassigning…" : `Yes, disconnect ${state!.currentTenantName} & reassign`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDismissed(true)}
+              className="rounded-lg border border-[var(--color-line)] px-3 py-2 text-sm font-medium hover:bg-black/[0.03]"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <button disabled={pending} className="btn-primary px-4 py-2 text-sm disabled:opacity-60">
+            {pending ? "Provisioning…" : "Provision & assign"}
+          </button>
+          {state?.ok && (
+            <span className="text-sm text-[var(--color-money-700)]">
+              ✓ Provisioned {state.e164}
+              {state.movedFrom ? ` · moved from ${state.movedFrom}` : ""}
+              {state.plivoAppId ? ` · Plivo app ${state.plivoAppId}` : ""}
+            </span>
+          )}
+          {state?.error && <span className="text-sm text-[var(--color-danger-600)]">{state.error}</span>}
+        </div>
+      )}
     </form>
   );
 }

@@ -123,7 +123,25 @@ export async function assignPlivoNumberAction(_prev: unknown, formData: FormData
   await requireAdminSession();
   const tenantId = String(formData.get("tenantId") ?? "");
   const e164 = String(formData.get("e164") ?? "").replace(/[^\d+]/g, "");
+  const confirm = formData.get("confirm") === "true";
   if (!tenantId || !/^\+\d{8,15}$/.test(e164)) return { error: "Enter a valid E.164 number (e.g. +912248123456)." };
+
+  // Safety: if this number is already assigned to a DIFFERENT tenant, don't
+  // silently disconnect them — surface which tenant holds it and require an
+  // explicit confirmation before reassigning.
+  const existing = await prisma.plivoNumber.findUnique({
+    where: { e164 },
+    include: { tenant: { select: { id: true, brandName: true, slug: true } } },
+  });
+  const movingFrom = existing && existing.tenantId !== tenantId ? existing.tenant : null;
+  if (movingFrom && !confirm) {
+    return {
+      needsConfirm: true as const,
+      e164,
+      currentTenantName: movingFrom.brandName,
+      currentTenantSlug: movingFrom.slug,
+    };
+  }
 
   const apiBase = process.env.API_BASE_URL;
   if (!apiBase) return { error: "API_BASE_URL is not set on the web app — can't reach the provisioning service." };
@@ -148,7 +166,13 @@ export async function assignPlivoNumberAction(_prev: unknown, formData: FormData
 
   revalidatePath(`/admin/tenants/${tenantId}`);
   revalidatePath("/admin");
-  return { ok: true, plivoAppId: String(json.plivoAppId ?? ""), e164: String(json.e164 ?? e164) };
+  if (movingFrom) revalidatePath(`/admin/tenants/${movingFrom.id}`);
+  return {
+    ok: true as const,
+    plivoAppId: String(json.plivoAppId ?? ""),
+    e164: String(json.e164 ?? e164),
+    movedFrom: movingFrom?.brandName ?? null,
+  };
 }
 
 // Link a tenant's OWN WABA (provider 'own' — the Phase-1 path). Embedded Signup
