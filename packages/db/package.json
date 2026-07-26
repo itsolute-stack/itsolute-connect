@@ -16,7 +16,8 @@
     "migrate:dev": "prisma migrate dev",
     "migrate:create": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
     "studio": "prisma studio",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "seed:modeb": "tsx prisma/seed-modeb-test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

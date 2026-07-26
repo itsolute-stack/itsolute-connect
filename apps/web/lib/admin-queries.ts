@@ -63,9 +63,62 @@ export async function getTenantAdmin(id: string) {
       whatsappSenders: { orderBy: { createdAt: "desc" } },
       plivoNumbers: { orderBy: { createdAt: "desc" } },
       users: { orderBy: { createdAt: "asc" } },
-      templates: true,
+      templates: { orderBy: [{ createdAt: "desc" }] },
+      // Mode B routing config (read-only view for admins).
+      staff: { orderBy: { ringOrder: "asc" } },
+      ivrNodes: { orderBy: { createdAt: "asc" } },
+      // Recent activity.
+      calls: { orderBy: { startedAt: "desc" }, take: 30 },
+      recoveryMessages: { orderBy: { createdAt: "desc" }, take: 25 },
     },
   });
+}
+
+/** This-month usage rollup for one tenant (messages + Mode B minutes). */
+export async function getTenantMonthUsage(tenantId: string, timezone: string) {
+  const { start, end } = currentMonthRange(timezone || "Asia/Kolkata");
+  const agg = await prisma.usageDaily.aggregate({
+    where: { tenantId, date: { gte: start, lte: end } },
+    _sum: { recoveryMessages: true, minutes: true },
+  });
+  return { messages: agg._sum.recoveryMessages ?? 0, minutes: agg._sum.minutes ?? 0 };
+}
+
+/** Every user across all tenants (plus internal admins). */
+export async function getAllUsers() {
+  const users = await prisma.user.findMany({
+    orderBy: [{ createdAt: "asc" }],
+    include: { tenant: { select: { slug: true, brandName: true } } },
+  });
+  return users.map((u) => ({
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    createdAt: u.createdAt,
+    tenantId: u.tenantId,
+    tenantName: u.tenant?.brandName ?? null,
+    tenantSlug: u.tenant?.slug ?? null,
+  }));
+}
+
+/** Every Plivo number Connect knows about — the provisioning history. */
+export async function getAllNumbers() {
+  const numbers = await prisma.plivoNumber.findMany({
+    orderBy: [{ createdAt: "desc" }],
+    include: { tenant: { select: { id: true, slug: true, brandName: true } }, _count: { select: { calls: true } } },
+  });
+  return numbers.map((n) => ({
+    id: n.id,
+    e164: n.e164,
+    plivoAppId: n.plivoAppId,
+    status: n.status, // active | released
+    createdAt: n.createdAt,
+    tenantId: n.tenantId,
+    tenantName: n.tenant?.brandName ?? "—",
+    tenantSlug: n.tenant?.slug ?? null,
+    calls: n._count.calls,
+  }));
 }
 
 export async function getAdminTemplates() {
