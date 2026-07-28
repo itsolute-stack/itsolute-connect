@@ -53,6 +53,7 @@ export default async function AdminTenantDetail({ params }: { params: Promise<{ 
           billingCycle={tenant.billingCycle}
           onboardingFee={tenant.onboardingFee}
           aiEnabled={tenant.aiEnabled}
+          callLogWebhookUrl={tenant.callLogWebhookUrl}
         />
       </Section>
 

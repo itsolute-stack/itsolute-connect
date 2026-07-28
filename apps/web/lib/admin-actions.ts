@@ -88,7 +88,11 @@ export async function updateTenantAction(_prev: unknown, formData: FormData) {
   const billingCycle = String(formData.get("billingCycle")) as BillingCycle;
   const onboardingFeeRaw = String(formData.get("onboardingFee") ?? "").trim();
   const aiEnabled = formData.get("aiEnabled") === "on";
+  const callLogWebhookUrl = String(formData.get("callLogWebhookUrl") ?? "").trim();
 
+  if (callLogWebhookUrl && !/^https:\/\/script\.google\.com\/.+/.test(callLogWebhookUrl)) {
+    return { error: "Call-log URL should be a Google Apps Script web-app URL (https://script.google.com/…)." };
+  }
   if (!["A", "B"].includes(mode)) return { error: "Invalid mode." };
   if (!PLAN_IDS.includes(plan)) return { error: "Invalid plan." };
   if (!["trial", "active", "paused"].includes(status)) return { error: "Invalid status." };
@@ -107,6 +111,7 @@ export async function updateTenantAction(_prev: unknown, formData: FormData) {
       billingCycle: ["monthly", "annual"].includes(billingCycle) ? billingCycle : "monthly",
       onboardingFee: onboardingFeeRaw ? Math.max(0, Math.round(Number(onboardingFeeRaw)) || 0) : null,
       aiEnabled,
+      callLogWebhookUrl: callLogWebhookUrl || null,
     },
   });
   revalidatePath(`/admin/tenants/${id}`);

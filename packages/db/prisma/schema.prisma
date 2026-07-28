@@ -157,6 +157,9 @@ model Tenant {
   // Approved WABA template used to alert staff when a missed caller replies
   // (business-initiated to the owner needs a template). Null = no push alert.
   alertTemplateName String?  @map("alert_template_name")
+  // Per-tenant Google Sheet call log: an Apps Script web-app URL we POST each
+  // finished call to. Null = logging off for this tenant. No Google auth needed.
+  callLogWebhookUrl String?  @map("call_log_webhook_url")
   onboardingFee Int?         @map("onboarding_fee") // admin-set, optional done-for-you fee (rupees)
   status        TenantStatus @default(trial)
   createdAt     DateTime     @default(now()) @map("created_at")
@@ -278,6 +281,7 @@ model Call {
   routePath     Json?         @map("route_path") // Mode B: which staff/IVR nodes it hit
   recordingUrl  String?       @map("recording_url")
   plivoCallUuid String?       @unique @map("plivo_call_uuid")
+  sheetLoggedAt DateTime?     @map("sheet_logged_at") // set once appended to the tenant's Google Sheet (dedup)
   raw           Json?
 
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)

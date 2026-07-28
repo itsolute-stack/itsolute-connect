@@ -284,4 +284,39 @@ That's it — they now count as active, and their price rolls into the MRR total
 
 ---
 
+## 10. Call log to a Google Sheet (optional, any plan)
+
+If a business wants a live spreadsheet of their calls, we log every finished call to a **Google Sheet they own** — you set it up once per business and share it with them. No Google login or keys on our side; we just POST each call to a tiny script the sheet runs.
+
+**Set it up (a few minutes, once per business):**
+
+1. Create a **new Google Sheet** for that business (e.g. "Acme Clinic — Call Log").
+2. In the sheet, open **Extensions → Apps Script**. Delete anything there and paste this, then **Save**:
+
+```javascript
+function doPost(e) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Calls') || ss.insertSheet('Calls');
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['Time', 'Caller', 'Status', 'Duration (s)', 'Billable (s)', 'Mode', 'Call ID']);
+  }
+  var d = JSON.parse(e.postData.contents);
+  sheet.appendRow([d.time, d.caller, d.status, d.durationSec, d.billableSec, d.mode, d.callUuid || '']);
+  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
+}
+```
+
+3. Click **Deploy → New deployment**. Choose type **Web app**. Set **Execute as: Me**, and **Who has access: Anyone**. Click **Deploy**, authorize it when Google asks, and **copy the Web app URL** (it ends in `/exec`).
+4. **Share the Sheet** with the business owner (Viewer is enough) so they can watch it fill up.
+5. In Connect admin → the tenant's page → **Plan & mode** → paste the URL into **Call-log Google Sheet URL** → **Save**.
+6. **Test:** place a call to their number. Within a few seconds a new row should appear in the sheet. If it doesn't, re-check that the deployment's access is **Anyone** and that the URL ends in `/exec`.
+
+**Good to know:**
+
+- It logs **every** finished call — missed and answered, both modes — as soon as the call ends. The **Status** column shows `missed`, `answered`, or `recovered`.
+- Leaving the URL blank turns logging off for that tenant. It's per-business, so each has their own sheet.
+- "Who has access: Anyone" is required so our server can post without a login — the URL itself is long and unguessable. Don't put anything secret in the sheet's script.
+
+---
+
 *Keep this current.* When the process changes, edit `apps/web/content/onboarding-playbook.md` in the repo — this page renders straight from that file.

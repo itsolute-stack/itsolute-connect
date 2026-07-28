@@ -32,6 +32,7 @@ export function EditTenantForm({
   billingCycle,
   onboardingFee,
   aiEnabled,
+  callLogWebhookUrl,
 }: {
   id: string;
   mode: string;
@@ -40,6 +41,7 @@ export function EditTenantForm({
   billingCycle: string;
   onboardingFee: number | null;
   aiEnabled: boolean;
+  callLogWebhookUrl: string | null;
 }) {
   const [state, action, pending] = useActionState<Result, FormData>(updateTenantAction, null);
   return (
@@ -86,6 +88,18 @@ export function EditTenantForm({
           <input name="aiEnabled" type="checkbox" defaultChecked={aiEnabled} className="h-4 w-4" />
           AI enabled (future)
         </label>
+      </div>
+      <div>
+        <label className={label}>Call-log Google Sheet URL (Apps Script web app)</label>
+        <input
+          name="callLogWebhookUrl"
+          defaultValue={callLogWebhookUrl ?? ""}
+          placeholder="https://script.google.com/macros/s/…/exec"
+          className={input}
+        />
+        <p className="mt-1 text-xs text-[var(--color-ink-faint)]">
+          Every finished call is appended to this tenant&apos;s sheet. Leave blank to turn logging off.
+        </p>
       </div>
       <div className="flex items-center gap-3">
         <button disabled={pending} className="btn-primary px-4 py-2 text-sm disabled:opacity-60">

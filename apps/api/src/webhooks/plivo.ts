@@ -6,6 +6,7 @@ import { verifyPlivoV3 } from "../lib/plivo-signature.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { enqueueRecovery } from "../queues/recovery.js";
 import { alertStaffOfMissedCall } from "../services/recovery-events.js";
+import { logCallToSheet } from "../lib/sheet-log.js";
 import {
   startModeBCall,
   handleIvrInput,
@@ -165,6 +166,26 @@ plivoWebhooks.post("/hangup", asyncHandler(async (req: Request, res: Response) =
       }
       await meterCallMinutes(tenant.id, sec, tenant.timezone);
     }
+  }
+
+  // Google Sheet call log — all plans, best-effort, once per call. Only fires
+  // when the tenant has a sheet webhook configured; never blocks the response.
+  if (tenant?.callLogWebhookUrl && !call.sheetLoggedAt) {
+    const time = new Intl.DateTimeFormat("en-IN", {
+      timeZone: tenant.timezone,
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date());
+    await logCallToSheet(tenant, {
+      time,
+      caller: call.callerE164,
+      status: shouldRecover ? "missed" : call.status,
+      durationSec,
+      billableSec,
+      mode: tenant.mode,
+      callUuid: call.plivoCallUuid,
+    });
+    await prisma.call.update({ where: { id: call.id }, data: { sheetLoggedAt: new Date() } });
   }
 
   return res.status(200).end();
