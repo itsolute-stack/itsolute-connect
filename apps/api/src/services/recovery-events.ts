@@ -159,3 +159,36 @@ export async function alertOwnerOfReply(tenantId: string, recoveryMessageId: str
     }
   }
 }
+
+// Alert staff the MOMENT a Mode B call is missed (before any customer reply), so
+// they can call the lead straight back. Sends the tenant's alert template to
+// each Staff member with alertOnMissed=true, from the connected sender. Same
+// shape as alertOwnerOfReply ({{1}} = caller, {{2}} = note); no-ops quietly if
+// no alert template / connected sender / recipients are configured, so a
+// tenant without the alert set up never errors.
+export async function alertStaffOfMissedCall(tenantId: string, callerE164: string) {
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant?.alertTemplateName) return; // no alert template configured
+
+  const sender = await prisma.whatsAppSender.findFirst({
+    where: { tenantId, status: "connected" },
+  });
+  if (!sender?.platformBrandSlug) return;
+
+  const recipients = await prisma.staff.findMany({ where: { tenantId, alertOnMissed: true } });
+  if (recipients.length === 0) return;
+
+  for (const r of recipients) {
+    try {
+      await sendTemplate({
+        brandSlug: sender.platformBrandSlug,
+        to: r.e164,
+        templateName: tenant.alertTemplateName,
+        variables: [callerE164, "missed their call — call back now"],
+      });
+      console.log(`[alert] pushed missed-call alert to ${r.name} (${r.e164}) re ${callerE164}`);
+    } catch (e) {
+      console.error(`[alert] failed missed-call alert to ${r.e164}:`, (e as Error).message);
+    }
+  }
+}

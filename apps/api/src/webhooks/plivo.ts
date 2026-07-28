@@ -5,6 +5,7 @@ import { speakThenHangup, hangup } from "../lib/plivo-xml.js";
 import { verifyPlivoV3 } from "../lib/plivo-signature.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { enqueueRecovery } from "../queues/recovery.js";
+import { alertStaffOfMissedCall } from "../services/recovery-events.js";
 import {
   startModeBCall,
   handleIvrInput,
@@ -143,9 +144,20 @@ plivoWebhooks.post("/hangup", asyncHandler(async (req: Request, res: Response) =
     });
   }
 
-  // Mode B: meter connected minutes into the daily usage rollup (spec §4b.4).
   const tenant = await prisma.tenant.findUnique({ where: { id: call.tenantId } });
   if (tenant?.mode === "B") {
+    // Alert the staff/owner the moment a Mode B call is missed so they can call
+    // back immediately. Only on the first hangup (shouldRecover) so it fires
+    // once per call. Best-effort — never fail the webhook over an alert.
+    if (shouldRecover) {
+      try {
+        await alertStaffOfMissedCall(tenant.id, call.callerE164);
+      } catch (e) {
+        console.error("[plivo] staff missed-call alert failed:", (e as Error).message);
+      }
+    }
+
+    // Meter connected minutes into the daily usage rollup (spec §4b.4).
     const sec = Math.max(call.billableSec, billableSec);
     if (sec > 0) {
       if (sec !== call.billableSec) {

@@ -280,6 +280,13 @@ const RECOVERY_TEMPLATE_BODY =
   "Hi, this is {{1}}. Sorry we missed your call just now — we'd love to help. " +
   "You can book a time here: {{2}} or just reply to this message and we'll get right back to you.";
 
+// Mode B also alerts the owner/staff on a missed call (and when a lead replies).
+// That's a business-initiated message to their own team, so it needs its own
+// approved template. {{1}} = caller number, {{2}} = what happened / what to do.
+const LEAD_ALERT_TEMPLATE_NAME = "lead_alert";
+const LEAD_ALERT_TEMPLATE_BODY =
+  "🔔 Lead alert from {{1}} — {{2}}. Open your ITSolute Connect dashboard to follow up.";
+
 function mapMetaStatus(s: string): "approved" | "pending" | "rejected" {
   const u = String(s ?? "").toUpperCase();
   if (u === "APPROVED") return "approved";
@@ -315,6 +322,28 @@ async function mirrorConnectTemplate(tenantId: string, status: "approved" | "pen
   else await prisma.template.create({ data: { tenantId, ...data } });
 }
 
+/**
+ * Mode B only: submit the staff-alert template under the same brand and point
+ * tenant.alertTemplateName at it, so missed-call and lead-reply alerts have a
+ * template to send. Best-effort; returns a short status string for the UI note.
+ */
+async function submitLeadAlertTemplate(tenantId: string, brandSlug: string): Promise<string> {
+  const res = await waPost<{ template?: { status?: string }; error?: string }>("/api/templates", {
+    brand: brandSlug,
+    name: LEAD_ALERT_TEMPLATE_NAME,
+    category: "utility",
+    language: "en",
+    bodyText: LEAD_ALERT_TEMPLATE_BODY,
+    variableExamples: ["+919876543210", "missed their call — call back now"],
+  });
+  const existed = !res.ok && /exist|already/i.test(res.error ?? "");
+  if (!res.ok && !existed) return `staff-alert template failed: ${res.error}`;
+  // Point the tenant at it so alerts actually send.
+  await prisma.tenant.update({ where: { id: tenantId }, data: { alertTemplateName: LEAD_ALERT_TEMPLATE_NAME } });
+  const status = existed ? "already existed" : mapMetaStatus(res.data?.template?.status ?? "PENDING");
+  return `staff-alert template (${LEAD_ALERT_TEMPLATE_NAME}): ${status}`;
+}
+
 /** Read the recovery template's current status from the platform (Meta-synced). */
 async function syncRecoveryStatus(tenantId: string, brandSlug: string): Promise<TemplateActionResult> {
   const res = await waGet<{ templates?: { name: string; status: string }[] }>(
@@ -345,22 +374,36 @@ export async function submitRecoveryTemplateAction(tenantId: string): Promise<Te
     variableExamples: [tenant.brandName, bookingExample],
   });
 
+  let status: string;
+  let metaId: string | undefined;
+  let note: string | undefined;
+
   if (!res.ok) {
     // Already submitted/approved on Meta → not an error; just sync the status.
     if (/exist|already/i.test(res.error ?? "")) {
       const synced = await syncRecoveryStatus(tenantId, brandSlug);
-      return synced.ok
-        ? { ...synced, note: "Template already existed on Meta — recorded its current status." }
-        : { error: res.error };
+      if (!synced.ok) return { error: res.error };
+      status = synced.status ?? "PENDING";
+      note = "Recovery template already existed on Meta — recorded its current status.";
+    } else {
+      return { error: res.error };
     }
-    return { error: res.error };
+  } else {
+    status = res.data?.template?.status ?? "PENDING";
+    metaId = res.data?.metaId;
+    await mirrorConnectTemplate(tenantId, mapMetaStatus(status));
   }
 
-  const metaStatus = res.data?.template?.status ?? "PENDING";
-  await mirrorConnectTemplate(tenantId, mapMetaStatus(metaStatus));
+  // Mode B tenants also alert their owner/staff on a missed call — that needs a
+  // second approved template. Submit it under the same brand and wire it up.
+  if (tenant.mode === "B") {
+    const alertNote = await submitLeadAlertTemplate(tenantId, brandSlug);
+    note = note ? `${note} · ${alertNote}` : alertNote;
+  }
+
   revalidatePath(`/admin/tenants/${tenantId}`);
   revalidatePath("/admin/templates");
-  return { ok: true, status: metaStatus, metaId: res.data?.metaId };
+  return { ok: true, status, metaId, note };
 }
 
 /** Re-check the recovery template's Meta status and update the Connect row. */

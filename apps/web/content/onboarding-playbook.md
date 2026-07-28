@@ -199,7 +199,7 @@ A recovery message ("sorry we missed your call, here's how to book") is a **util
 
 ### How many you need
 
-**Just one** — the missed-call recovery template — for both Mode A and Mode B. It's the only message we start (a "business-initiated" message), so it's the only one that needs a template. The caller's *replies* come back inside WhatsApp's 24-hour window, so those go out as normal text with no template. (Booking-confirmed / reminder templates are optional extras, not required for recovery.)
+**Mode A: one** — the missed-call recovery template that goes to the customer. **Mode B: two** — that same recovery template, plus a **lead-alert** template that goes to the owner/staff the moment a call is missed (so they can call the person back). Both are "business-initiated" messages, which is why each needs an approved template. The good news: the **Create & submit to Meta** button submits *both* for a Mode B tenant in one click, and wires up the alert automatically — you don't do anything extra. The caller's *replies* come back inside WhatsApp's 24-hour window, so those go out as normal text with no template. (Booking-confirmed / reminder templates are optional extras, not required.)
 
 ### The easy way — the "Create & submit to Meta" button (automated)
 
