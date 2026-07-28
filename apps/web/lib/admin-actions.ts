@@ -88,11 +88,18 @@ export async function updateTenantAction(_prev: unknown, formData: FormData) {
   const billingCycle = String(formData.get("billingCycle")) as BillingCycle;
   const onboardingFeeRaw = String(formData.get("onboardingFee") ?? "").trim();
   const aiEnabled = formData.get("aiEnabled") === "on";
-  const callLogWebhookUrl = String(formData.get("callLogWebhookUrl") ?? "").trim();
 
-  if (callLogWebhookUrl && !/^https:\/\/script\.google\.com\/.+/.test(callLogWebhookUrl)) {
-    return { error: "Call-log URL should be a Google Apps Script web-app URL (https://script.google.com/…)." };
+  // Accept either a raw spreadsheet ID or a full Google Sheets URL; store the ID.
+  const callLogRaw = String(formData.get("callLogSheetId") ?? "").trim();
+  let callLogSheetId: string | null = null;
+  if (callLogRaw) {
+    const fromUrl = callLogRaw.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    callLogSheetId = fromUrl ? fromUrl[1] : callLogRaw;
+    if (!/^[a-zA-Z0-9-_]{20,}$/.test(callLogSheetId)) {
+      return { error: "Enter a Google Sheet ID or its full URL (…/spreadsheets/d/<id>/…)." };
+    }
   }
+
   if (!["A", "B"].includes(mode)) return { error: "Invalid mode." };
   if (!PLAN_IDS.includes(plan)) return { error: "Invalid plan." };
   if (!["trial", "active", "paused"].includes(status)) return { error: "Invalid status." };
@@ -111,7 +118,7 @@ export async function updateTenantAction(_prev: unknown, formData: FormData) {
       billingCycle: ["monthly", "annual"].includes(billingCycle) ? billingCycle : "monthly",
       onboardingFee: onboardingFeeRaw ? Math.max(0, Math.round(Number(onboardingFeeRaw)) || 0) : null,
       aiEnabled,
-      callLogWebhookUrl: callLogWebhookUrl || null,
+      callLogSheetId,
     },
   });
   revalidatePath(`/admin/tenants/${id}`);

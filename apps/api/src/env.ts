@@ -57,6 +57,12 @@ export const env = {
   waPlatformUserPassword: optional("WA_PLATFORM_USER_PASSWORD"),
   reconcileIntervalMs: Number(optional("RECONCILE_INTERVAL_MS", "180000")), // 3 min
   reconcileWindowHours: Number(optional("RECONCILE_WINDOW_HOURS", "72")),
+
+  // Google service account for the per-tenant call-log Sheets. ONE credential for
+  // all tenants; we own each sheet and share it read-only with the business. The
+  // private key comes through env with literal "\n" — normalize to real newlines.
+  googleSaEmail: optional("GOOGLE_SERVICE_ACCOUNT_EMAIL"),
+  googleSaPrivateKey: optional("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY").replace(/\\n/g, "\n"),
 } as const;
 
 export function isProd() {

@@ -32,7 +32,7 @@ export function EditTenantForm({
   billingCycle,
   onboardingFee,
   aiEnabled,
-  callLogWebhookUrl,
+  callLogSheetId,
 }: {
   id: string;
   mode: string;
@@ -41,7 +41,7 @@ export function EditTenantForm({
   billingCycle: string;
   onboardingFee: number | null;
   aiEnabled: boolean;
-  callLogWebhookUrl: string | null;
+  callLogSheetId: string | null;
 }) {
   const [state, action, pending] = useActionState<Result, FormData>(updateTenantAction, null);
   return (
@@ -90,15 +90,16 @@ export function EditTenantForm({
         </label>
       </div>
       <div>
-        <label className={label}>Call-log Google Sheet URL (Apps Script web app)</label>
+        <label className={label}>Call-log Google Sheet (ID or URL)</label>
         <input
-          name="callLogWebhookUrl"
-          defaultValue={callLogWebhookUrl ?? ""}
-          placeholder="https://script.google.com/macros/s/…/exec"
+          name="callLogSheetId"
+          defaultValue={callLogSheetId ?? ""}
+          placeholder="1AbC…xyz  or  https://docs.google.com/spreadsheets/d/1AbC…xyz/edit"
           className={input}
         />
         <p className="mt-1 text-xs text-[var(--color-ink-faint)]">
-          Every finished call is appended to this tenant&apos;s sheet. Leave blank to turn logging off.
+          Every finished call is appended to this sheet (we own it, share it with the business). The service
+          account must have edit access. Leave blank to turn logging off.
         </p>
       </div>
       <div className="flex items-center gap-3">

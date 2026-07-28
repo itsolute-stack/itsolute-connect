@@ -157,9 +157,10 @@ model Tenant {
   // Approved WABA template used to alert staff when a missed caller replies
   // (business-initiated to the owner needs a template). Null = no push alert.
   alertTemplateName String?  @map("alert_template_name")
-  // Per-tenant Google Sheet call log: an Apps Script web-app URL we POST each
-  // finished call to. Null = logging off for this tenant. No Google auth needed.
-  callLogWebhookUrl String?  @map("call_log_webhook_url")
+  // Per-tenant Google Sheet call log: the spreadsheet ID of a sheet OUR service
+  // account can write to (we own it, share it read-only with the tenant). We
+  // append each finished call via the Sheets API. Null = logging off.
+  callLogSheetId String?   @map("call_log_sheet_id")
   onboardingFee Int?         @map("onboarding_fee") // admin-set, optional done-for-you fee (rupees)
   status        TenantStatus @default(trial)
   createdAt     DateTime     @default(now()) @map("created_at")

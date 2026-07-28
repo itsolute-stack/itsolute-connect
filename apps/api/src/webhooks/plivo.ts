@@ -169,8 +169,8 @@ plivoWebhooks.post("/hangup", asyncHandler(async (req: Request, res: Response) =
   }
 
   // Google Sheet call log — all plans, best-effort, once per call. Only fires
-  // when the tenant has a sheet webhook configured; never blocks the response.
-  if (tenant?.callLogWebhookUrl && !call.sheetLoggedAt) {
+  // when the tenant has a sheet configured; never blocks the response.
+  if (tenant?.callLogSheetId && !call.sheetLoggedAt) {
     const time = new Intl.DateTimeFormat("en-IN", {
       timeZone: tenant.timezone,
       dateStyle: "medium",

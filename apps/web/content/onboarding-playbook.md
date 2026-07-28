@@ -286,36 +286,30 @@ That's it — they now count as active, and their price rolls into the MRR total
 
 ## 10. Call log to a Google Sheet (optional, any plan)
 
-If a business wants a live spreadsheet of their calls, we log every finished call to a **Google Sheet they own** — you set it up once per business and share it with them. No Google login or keys on our side; we just POST each call to a tiny script the sheet runs.
+If a business wants a live spreadsheet of their calls, we log every finished call to a **Google Sheet we own** and share read-only with them. It runs off **one service account** for all tenants — no per-business scripts, no logins to manage.
 
-**Set it up (a few minutes, once per business):**
+### One-time platform setup (done once, not per tenant)
 
-1. Create a **new Google Sheet** for that business (e.g. "Acme Clinic — Call Log").
-2. In the sheet, open **Extensions → Apps Script**. Delete anything there and paste this, then **Save**:
+Someone technical sets this up once:
 
-```javascript
-function doPost(e) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Calls') || ss.insertSheet('Calls');
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['Time', 'Caller', 'Status', 'Duration (s)', 'Billable (s)', 'Mode', 'Call ID']);
-  }
-  var d = JSON.parse(e.postData.contents);
-  sheet.appendRow([d.time, d.caller, d.status, d.durationSec, d.billableSec, d.mode, d.callUuid || '']);
-  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
-}
-```
+1. In **Google Cloud Console**, create (or reuse) a project and **enable the Google Sheets API**.
+2. Create a **service account**; under its **Keys**, add a **JSON key** and download it.
+3. On the **API service** (Railway), set two env vars from that JSON: `GOOGLE_SERVICE_ACCOUNT_EMAIL` (the `client_email`) and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (the `private_key`, keeping its `\n` line breaks).
+4. Note the service account's email address — it looks like `something@your-project.iam.gserviceaccount.com`. You'll share each tenant's sheet with it.
 
-3. Click **Deploy → New deployment**. Choose type **Web app**. Set **Execute as: Me**, and **Who has access: Anyone**. Click **Deploy**, authorize it when Google asks, and **copy the Web app URL** (it ends in `/exec`).
-4. **Share the Sheet** with the business owner (Viewer is enough) so they can watch it fill up.
-5. In Connect admin → the tenant's page → **Plan & mode** → paste the URL into **Call-log Google Sheet URL** → **Save**.
-6. **Test:** place a call to their number. Within a few seconds a new row should appear in the sheet. If it doesn't, re-check that the deployment's access is **Anyone** and that the URL ends in `/exec`.
+### Per business (a minute each)
+
+1. In **our** company Google account, create a **new Google Sheet** for the business (e.g. "Acme Clinic — Call Log"). Optionally add a header row: `Time · Caller · Status · Duration (s) · Billable (s) · Mode · Call ID`.
+2. **Share** that sheet with two people: the **service account email** as **Editor** (so we can append rows), and the **business owner** as **Viewer** (so they can watch, not edit).
+3. Copy the sheet's **ID** (the long code in its URL between `/d/` and `/edit`) — or just copy the whole URL.
+4. In Connect admin → the tenant's page → **Plan & mode** → paste it into **Call-log Google Sheet (ID or URL)** → **Save**.
+5. **Test:** place a call to their number. Within a few seconds a new row should appear. If nothing shows up, the usual cause is that the sheet wasn't shared with the **service account email as Editor**.
 
 **Good to know:**
 
 - It logs **every** finished call — missed and answered, both modes — as soon as the call ends. The **Status** column shows `missed`, `answered`, or `recovered`.
-- Leaving the URL blank turns logging off for that tenant. It's per-business, so each has their own sheet.
-- "Who has access: Anyone" is required so our server can post without a login — the URL itself is long and unguessable. Don't put anything secret in the sheet's script.
+- Leaving the field blank turns logging off for that tenant. Each business has its own sheet.
+- Because we own the sheet, the business can never break the logging — they only have view access.
 
 ---
 
