@@ -143,11 +143,19 @@ export async function startHunt(
   });
 }
 
-const ANSWERED = new Set(["completed", "answered"]);
-
 /**
- * Result of a dialed leg. If answered, mark the call answered. Otherwise hunt to
- * the next staff member (recording the result on the current hop).
+ * Result of a dialed staff leg. Mark the call `answered` ONLY if a staff member
+ * actually picked up — otherwise hunt to the next staff member (recording the
+ * result on the current hop).
+ *
+ * "Answered" is decided by the staff B-leg having real connected duration
+ * (`billableSec > 0`), NOT by Plivo's `DialStatus`. Plivo reports
+ * DialStatus="completed" whenever the <Dial> element finishes — which also
+ * happens when the caller hangs up during ringing before anyone picks up. Gating
+ * on DialStatus would mark those abandoned calls "answered", hiding a lost lead
+ * from the owner and skipping the WhatsApp recovery. A leg that isn't a real
+ * pickup (no-answer, busy, or caller abandoned) stays `ringing`, so the hangup
+ * webhook correctly logs it `missed` and fires recovery.
  */
 export async function handleDialStatus(
   tenant: Tenant,
@@ -157,7 +165,7 @@ export async function handleDialStatus(
   billableSec: number,
   recordingUrl?: string,
 ): Promise<string> {
-  // annotate the current ring hop with its result
+  // annotate the current ring hop with its result (keep Plivo's raw status)
   const fresh = await prisma.call.findUnique({ where: { id: call.id }, select: { routePath: true } });
   const path = Array.isArray(fresh?.routePath) ? (fresh!.routePath as any[]) : [];
   for (let i = path.length - 1; i >= 0; i--) {
@@ -167,7 +175,8 @@ export async function handleDialStatus(
     }
   }
 
-  if (ANSWERED.has(dialStatus.toLowerCase())) {
+  const staffPickedUp = billableSec > 0; // the B-leg genuinely connected
+  if (staffPickedUp) {
     await prisma.call.update({
       where: { id: call.id },
       data: {
@@ -181,6 +190,9 @@ export async function handleDialStatus(
     return hangup(); // bridged leg ended; release the call
   }
 
+  // No pickup (no-answer/busy) or the caller abandoned — hunt to the next staff
+  // member. If the caller has already hung up, this XML is moot and the hangup
+  // webhook marks the call missed + enqueues recovery.
   await prisma.call.update({ where: { id: call.id }, data: { routePath: path as object[] } });
   return startHunt(tenant, call, index + 1);
 }

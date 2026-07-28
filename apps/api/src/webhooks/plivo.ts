@@ -218,8 +218,12 @@ plivoWebhooks.post("/dial-status", asyncHandler(async (req: Request, res: Respon
   const callUuid = (req.query.u as string) || body.CallUUID;
   const index = Number(req.query.i ?? 0) || 0;
   const dialStatus = String(body.DialStatus ?? body.DialBLegStatus ?? "");
-  const billableSec =
-    Number.parseInt(body.DialBLegBillDuration ?? body.DialBLegDuration ?? "0", 10) || 0;
+  // The staff B-leg's connected duration. This is the source of truth for
+  // "did a staff member actually pick up?" (see handleDialStatus). Take the max
+  // of bill/raw duration — `??` alone won't fall through when Plivo sends "0".
+  const bLegBill = Number.parseInt(body.DialBLegBillDuration ?? "0", 10) || 0;
+  const bLegDur = Number.parseInt(body.DialBLegDuration ?? "0", 10) || 0;
+  const billableSec = Math.max(bLegBill, bLegDur);
   const recordingUrl = body.DialBLegRecordUrl || body.RecordUrl || undefined;
 
   const call = callUuid ? await prisma.call.findUnique({ where: { plivoCallUuid: callUuid } }) : null;
