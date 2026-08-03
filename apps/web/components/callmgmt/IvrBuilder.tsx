@@ -1,7 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
-import { addIvrNodeAction, deleteIvrNodeAction } from "@/lib/callmgmt-actions";
+import {
+  addIvrNodeAction,
+  deleteIvrNodeAction,
+  uploadIvrAudioAction,
+  removeIvrAudioAction,
+} from "@/lib/callmgmt-actions";
 
 interface Node {
   id: string;
@@ -9,6 +14,7 @@ interface Node {
   key: string | null;
   prompt: string;
   action: string;
+  promptAudioUrl: string | null;
 }
 
 const ACTION_LABEL: Record<string, string> = {
@@ -86,6 +92,48 @@ export function IvrBuilder({ nodes }: { nodes: Node[] }) {
   );
 }
 
+function AudioControl({ nodeId, audioUrl }: { nodeId: string; audioUrl: string | null }) {
+  const [state, action, pending] = useActionState(
+    uploadIvrAudioAction,
+    null as { ok?: boolean; error?: string } | null,
+  );
+  return (
+    <div className="mt-2 space-y-1">
+      {audioUrl ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-[var(--color-money-700)]">🔊 Recorded greeting</span>
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <audio controls src={audioUrl} className="h-7 max-w-[200px]" />
+          <form action={removeIvrAudioAction}>
+            <input type="hidden" name="nodeId" value={nodeId} />
+            <button className="text-[var(--color-danger-600)] hover:underline">Remove</button>
+          </form>
+        </div>
+      ) : (
+        <p className="text-xs text-[var(--color-ink-faint)]">
+          Currently spoken as text (TTS). Upload an MP3/WAV to play a recorded greeting instead.
+        </p>
+      )}
+      <form action={action} className="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="nodeId" value={nodeId} />
+        <input
+          type="file"
+          name="audio"
+          accept="audio/mpeg,audio/wav,.mp3,.wav"
+          className="text-xs file:mr-2 file:rounded file:border-0 file:bg-[var(--color-brand-50)] file:px-2 file:py-1 file:text-xs file:text-[var(--color-brand-700)]"
+        />
+        <button
+          disabled={pending}
+          className="rounded-lg border border-[var(--color-line)] px-2 py-1 text-xs font-medium hover:bg-black/[0.03] disabled:opacity-60"
+        >
+          {pending ? "Uploading…" : audioUrl ? "Replace" : "Upload greeting"}
+        </button>
+        {state?.error && <span className="text-xs text-[var(--color-danger-600)]">{state.error}</span>}
+      </form>
+    </div>
+  );
+}
+
 function TreeNode({
   node,
   childrenOf,
@@ -112,6 +160,7 @@ function TreeNode({
             <span className="truncate font-medium">{node.prompt}</span>
           </div>
           <div className="text-xs text-[var(--color-ink-faint)]">{ACTION_LABEL[node.action] ?? node.action}</div>
+          <AudioControl nodeId={node.id} audioUrl={node.promptAudioUrl} />
         </div>
         <form action={deleteIvrNodeAction}>
           <input type="hidden" name="nodeId" value={node.id} />

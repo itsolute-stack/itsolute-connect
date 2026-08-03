@@ -1,7 +1,7 @@
 import { prisma } from "@itsolute/db";
 import type { Tenant, Call, IvrNode } from "@itsolute/db";
 import { env } from "../env.js";
-import { ivrMenu, dialStaff, speakThenHangup, hangup } from "../lib/plivo-xml.js";
+import { ivrMenu, dialStaff, speakThenHangup, promptThenHangup, hangup } from "../lib/plivo-xml.js";
 import { localDateYmd } from "../lib/business-hours.js";
 
 // Mode B (Front Desk) call routing (spec §4b). A call is walked through an
@@ -47,18 +47,24 @@ async function staffInOrder(tenantId: string) {
  * waited for a keypress that never came and timed out.)
  */
 async function runNodeAction(tenant: Tenant, call: Call, node: IvrNode): Promise<string> {
+  const audioUrl = node.promptAudioUrl ?? undefined; // uploaded greeting → <Play>
   switch (node.action) {
     case "submenu":
-      // A menu: speak the prompt and wait for a DTMF digit.
-      return ivrMenu(node.prompt, action("/webhooks/plivo/ivr", { u: call.plivoCallUuid ?? "", n: node.id }));
+      // A menu: play/speak the prompt and wait for a DTMF digit.
+      return ivrMenu(node.prompt, action("/webhooks/plivo/ivr", { u: call.plivoCallUuid ?? "", n: node.id }), {
+        audioUrl,
+      });
     case "ring_staff":
-      // Speak the greeting/prompt, then go straight to the staff hunt — no keypress.
-      return startHunt(tenant, call, 0, node.prompt);
+      // Play/speak the greeting, then go straight to the staff hunt — no keypress.
+      return startHunt(tenant, call, 0, node.prompt, audioUrl);
     case "voicemail":
-      return speakThenHangup(node.prompt || `${tenant.brandName}. Please leave a message after the tone.`);
+      return promptThenHangup(
+        node.prompt || `${tenant.brandName}. Please leave a message after the tone.`,
+        audioUrl,
+      );
     case "hangup":
     default:
-      return node.prompt ? speakThenHangup(node.prompt) : hangup();
+      return node.prompt || audioUrl ? promptThenHangup(node.prompt, audioUrl) : hangup();
   }
 }
 
@@ -124,6 +130,7 @@ export async function startHunt(
   call: Call,
   index: number,
   preamble?: string,
+  preambleAudioUrl?: string,
 ): Promise<string> {
   const staff = await staffInOrder(tenant.id);
   if (index >= staff.length) {
@@ -140,6 +147,7 @@ export async function startHunt(
     // Dial FROM our owned DID, not the caller's number — see ownedCallerId.
     callerId: await ownedCallerId(call),
     speakBefore: preamble,
+    audioBefore: preambleAudioUrl,
   });
 }
 

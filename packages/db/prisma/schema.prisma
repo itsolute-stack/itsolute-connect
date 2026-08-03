@@ -364,7 +364,10 @@ model IvrNode {
   tenantId String    @map("tenant_id") @db.Uuid
   parentId String?   @map("parent_id") @db.Uuid
   key      String? // DTMF digit
-  prompt   String // TTS text or audio ref
+  prompt   String // TTS text (fallback + label); spoken when no audio is uploaded
+  // Optional uploaded greeting for this node (Supabase Storage public URL). When
+  // set, the call plays this file (<Play>) instead of speaking `prompt` (<Speak>).
+  promptAudioUrl String? @map("prompt_audio_url")
   action   IvrAction
   config   Json      @default("{}")
   createdAt DateTime @default(now()) @map("created_at")

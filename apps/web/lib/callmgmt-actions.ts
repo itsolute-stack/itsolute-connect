@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { forTenant, prisma } from "@itsolute/db";
 import type { IvrAction } from "@itsolute/db";
 import { requireTenantSession } from "./session";
+import { uploadIvrAudio, removeIvrAudio } from "./ivr-audio-storage";
 
 // All Call Management writes are Mode B only and tenant-scoped via the session.
 
@@ -83,6 +84,42 @@ export async function addIvrNodeAction(_prev: unknown, formData: FormData) {
 export async function deleteIvrNodeAction(formData: FormData) {
   const id = await tenantId();
   const nodeId = String(formData.get("nodeId") ?? "");
-  await forTenant(id).ivrNode.deleteMany({ where: { id: nodeId } });
+  const db = forTenant(id);
+  // Clean up the node's uploaded greeting (if any) before deleting the row.
+  const node = await db.ivrNode.findFirst({ where: { id: nodeId }, select: { promptAudioUrl: true } });
+  if (node?.promptAudioUrl) await removeIvrAudio(node.promptAudioUrl).catch(() => {});
+  await db.ivrNode.deleteMany({ where: { id: nodeId } });
+  revalidatePath("/call-management");
+}
+
+// Upload (or replace) a real recorded greeting for one IVR node. Tenant-scoped:
+// the node must belong to the session's tenant, and files are stored under a
+// per-tenant path — no mixing between businesses.
+export async function uploadIvrAudioAction(_prev: unknown, formData: FormData) {
+  const id = await tenantId();
+  const nodeId = String(formData.get("nodeId") ?? "");
+  const file = formData.get("audio");
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose an MP3 or WAV file to upload." };
+
+  const db = forTenant(id);
+  const node = await db.ivrNode.findFirst({ where: { id: nodeId }, select: { id: true, promptAudioUrl: true } });
+  if (!node) return { error: "That menu step no longer exists." };
+
+  const res = await uploadIvrAudio(id, nodeId, file);
+  if (res.error) return { error: res.error };
+
+  await db.ivrNode.update({ where: { id: nodeId }, data: { promptAudioUrl: res.url } });
+  revalidatePath("/call-management");
+  return { ok: true };
+}
+
+// Remove a node's uploaded greeting — it falls back to speaking the typed prompt.
+export async function removeIvrAudioAction(formData: FormData) {
+  const id = await tenantId();
+  const nodeId = String(formData.get("nodeId") ?? "");
+  const db = forTenant(id);
+  const node = await db.ivrNode.findFirst({ where: { id: nodeId }, select: { promptAudioUrl: true } });
+  if (node?.promptAudioUrl) await removeIvrAudio(node.promptAudioUrl).catch(() => {});
+  await db.ivrNode.updateMany({ where: { id: nodeId }, data: { promptAudioUrl: null } });
   revalidatePath("/call-management");
 }

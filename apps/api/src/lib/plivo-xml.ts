@@ -10,6 +10,28 @@ function escapeXml(s: string): string {
     .replace(/'/g, "&apos;");
 }
 
+/**
+ * The audible element for an IVR prompt: an uploaded greeting (<Play>) when the
+ * node has an audio URL, otherwise TTS (<Speak>) of the typed prompt. Keeping
+ * this in one place means every node type (menu, ring greeting, voicemail,
+ * hangup) plays audio consistently when one is uploaded.
+ */
+function promptTag(text: string, audioUrl: string | undefined, language: string): string {
+  if (audioUrl) return `<Play>${escapeXml(audioUrl)}</Play>`;
+  return `<Speak language="${escapeXml(language)}" voice="Polly.Aditi">${escapeXml(text)}</Speak>`;
+}
+
+/** Play/speak a node's prompt, then hang up (voicemail / hangup IVR actions). */
+export function promptThenHangup(text: string, audioUrl?: string, language = "en-IN"): string {
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<Response>\n` +
+    `  ${promptTag(text, audioUrl, language)}\n` +
+    `  <Hangup/>\n` +
+    `</Response>`
+  );
+}
+
 /** Speak a branded line, then hang up (Mode A: the caller already missed us). */
 export function speakThenHangup(text: string, language = "en-IN"): string {
   return (
@@ -28,13 +50,22 @@ export function hangup(): string {
 
 // ── Mode B (Front Desk) ──────────────────────────────────────────────────────
 
-/** IVR menu: speak a prompt and collect one DTMF digit, POSTing it to `action`. */
-export function ivrMenu(prompt: string, action: string, language = "en-IN"): string {
+/**
+ * IVR menu: play/speak a prompt and collect one DTMF digit, POSTing it to
+ * `action`. Plays an uploaded greeting (<Play>) when `opts.audioUrl` is set,
+ * otherwise speaks the typed prompt.
+ */
+export function ivrMenu(
+  prompt: string,
+  action: string,
+  opts: { audioUrl?: string; language?: string } = {},
+): string {
+  const language = opts.language ?? "en-IN";
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<Response>\n` +
     `  <GetDigits action="${escapeXml(action)}" method="POST" numDigits="1" timeout="7" retries="1">\n` +
-    `    <Speak language="${escapeXml(language)}" voice="Polly.Aditi">${escapeXml(prompt)}</Speak>\n` +
+    `    ${promptTag(prompt, opts.audioUrl, language)}\n` +
     `  </GetDigits>\n` +
     `  <Speak language="${escapeXml(language)}" voice="Polly.Aditi">We didn't catch that. Goodbye.</Speak>\n` +
     `  <Hangup/>\n` +
@@ -49,7 +80,14 @@ export function ivrMenu(prompt: string, action: string, language = "en-IN"): str
 export function dialStaff(
   numberE164: string,
   action: string,
-  opts: { timeoutSec?: number; record?: boolean; callerId?: string; speakBefore?: string; language?: string } = {},
+  opts: {
+    timeoutSec?: number;
+    record?: boolean;
+    callerId?: string;
+    speakBefore?: string;
+    audioBefore?: string;
+    language?: string;
+  } = {},
 ): string {
   const attrs = [
     `action="${escapeXml(action)}"`,
@@ -58,14 +96,15 @@ export function dialStaff(
     ...(opts.callerId ? [`callerId="${escapeXml(opts.callerId)}"`] : []),
     ...(opts.record ? [`record="true"`, `redirect="false"`] : []),
   ].join(" ");
-  // Optionally speak a greeting (e.g. a ring_staff node's prompt) before dialing.
-  const speak = opts.speakBefore
-    ? `  <Speak language="${escapeXml(opts.language ?? "en-IN")}" voice="Polly.Aditi">${escapeXml(opts.speakBefore)}</Speak>\n`
-    : "";
+  // Optionally play/speak a greeting (a ring_staff node's prompt) before dialing.
+  const greet =
+    opts.audioBefore || opts.speakBefore
+      ? `  ${promptTag(opts.speakBefore ?? "", opts.audioBefore, opts.language ?? "en-IN")}\n`
+      : "";
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<Response>\n` +
-    speak +
+    greet +
     `  <Dial ${attrs}>\n` +
     `    <Number>${escapeXml(numberE164)}</Number>\n` +
     `  </Dial>\n` +

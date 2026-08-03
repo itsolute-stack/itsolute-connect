@@ -18,6 +18,9 @@ const nextConfig: NextConfig = {
     "/": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
     "/**": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
   },
+  // Allow IVR greeting uploads through server actions (default cap is 1 MB; we
+  // accept audio up to 5 MB — see ivr-audio-storage MAX_AUDIO_BYTES).
+  experimental: { serverActions: { bodySizeLimit: "6mb" } },
   // Our workspace packages ship TS source — transpile them.
   transpilePackages: ["@itsolute/db", "@itsolute/auth"],
   // Keep Prisma + bcrypt out of the bundle (Node-only, loaded at runtime).
