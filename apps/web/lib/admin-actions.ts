@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { prisma, plans } from "@itsolute/db";
 import type { TenantMode, Plan, TenantStatus, BillingCycle } from "@itsolute/db";
-import { createUser, SESSION_COOKIE } from "@itsolute/auth";
+import { randomBytes } from "node:crypto";
+import { createUser, SESSION_COOKIE, hashPassword } from "@itsolute/auth";
 import { requireAdminSession } from "./session";
 import { waGet, waPost } from "./wa-platform-client";
 
@@ -74,6 +75,48 @@ export async function createTenantAction(_prev: unknown, formData: FormData) {
 
   revalidatePath("/admin");
   redirect(`/admin/tenants/${tenant.id}`);
+}
+
+// ---------------------------------------------------------------------------
+// User management (spec §8): an admin can reset a user's password, generate a
+// temporary one to hand over, and optionally force the user to pick a new
+// password on their next visit (mustChangePassword, enforced in session.ts).
+// ---------------------------------------------------------------------------
+export interface ResetPasswordResult {
+  ok?: boolean;
+  error?: string;
+  password?: string; // the new/temp password, shown once so the admin can relay it
+  forced?: boolean;
+  email?: string;
+}
+
+/** Readable temp password: ~12 chars, no ambiguous punctuation. */
+function generateTempPassword(): string {
+  return randomBytes(9).toString("base64url").replace(/[-_]/g, "").slice(0, 12) + "9a";
+}
+
+export async function resetUserPasswordAction(_prev: unknown, formData: FormData): Promise<ResetPasswordResult> {
+  await requireAdminSession();
+  const userId = String(formData.get("userId") ?? "");
+  const custom = String(formData.get("password") ?? "").trim();
+  const forceChange = formData.get("forceChange") === "on";
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+  if (!user) return { error: "User not found." };
+
+  let password = custom;
+  if (password) {
+    if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  } else {
+    password = generateTempPassword();
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash: await hashPassword(password), mustChangePassword: forceChange },
+  });
+  revalidatePath("/admin/users");
+  return { ok: true, password, forced: forceChange, email: user.email };
 }
 
 // Tenant CRUD: mode / plan / status / billing / onboarding fee (spec §8).

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getAllUsers } from "@/lib/admin-queries";
 import { dateTime } from "@/lib/format";
+import { UserRowActions } from "@/components/admin/UserRowActions";
 
 export const metadata = { title: "Users · Connect Admin" };
 
@@ -26,6 +27,7 @@ export default async function AdminUsersPage() {
               <Th>Role</Th>
               <Th>Tenant</Th>
               <Th>Created</Th>
+              <Th>Password</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-line)]">
@@ -46,6 +48,9 @@ export default async function AdminUsersPage() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-[var(--color-ink-soft)]">{dateTime(u.createdAt, "Asia/Kolkata")}</td>
+                <td className="px-4 py-3">
+                  <UserRowActions userId={u.id} />
+                </td>
               </tr>
             ))}
           </tbody>

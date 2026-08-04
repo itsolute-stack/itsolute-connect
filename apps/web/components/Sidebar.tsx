@@ -97,6 +97,13 @@ function Logout({ email }: { email: string }) {
   return (
     <div className="mt-6 border-t border-[var(--color-line)] pt-3">
       <div className="truncate px-3 pb-2 text-xs text-[var(--color-ink-faint)]">{email}</div>
+      <Link
+        href="/change-password"
+        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-ink-soft)] hover:bg-black/[0.03]"
+      >
+        <Icon name="settings" className="h-[18px] w-[18px]" />
+        Change password
+      </Link>
       <form action={logoutAction}>
         <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-ink-soft)] hover:bg-black/[0.03]">
           <Icon name="logout" className="h-[18px] w-[18px]" />

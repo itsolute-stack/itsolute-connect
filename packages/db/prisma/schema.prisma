@@ -185,6 +185,9 @@ model User {
   tenantId     String?  @map("tenant_id") @db.Uuid // null = internal admin
   email        String   @unique
   passwordHash String?  @map("password_hash") // null when magic-link only
+  // Set by an admin reset/temp password: forces the user to a change-password
+  // screen on their next dashboard visit until they pick a new one.
+  mustChangePassword Boolean @default(false) @map("must_change_password")
   name         String?
   role         UserRole @default(owner)
   createdAt    DateTime @default(now()) @map("created_at")
